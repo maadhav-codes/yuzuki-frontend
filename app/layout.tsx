@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { Noto_Sans } from 'next/font/google';
+
+const notoSans = Noto_Sans({ variable: '--font-sans' });
 
 const siteName = 'Yuzuki';
 const siteDescription =
@@ -41,7 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang='en'>
+    <html className={notoSans.variable} lang='en'>
       <body className='bg-slate-50 text-slate-900 antialiased'>{children}</body>
     </html>
   );

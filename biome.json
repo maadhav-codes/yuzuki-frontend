@@ -25,7 +25,8 @@
       "!dist",
       "!build",
       "!package.json",
-      "!pnpm-*"
+      "!pnpm-*",
+      "!components/ui/**/*"
     ]
   },
   "formatter": {
