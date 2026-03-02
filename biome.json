@@ -26,7 +26,8 @@
       "!build",
       "!package.json",
       "!pnpm-*",
-      "!components/ui/**/*"
+      "!components/ui/**/*",
+      "!public/cubism4/live2dcubismcore.min.js"
     ]
   },
   "formatter": {
