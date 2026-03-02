@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { Noto_Sans } from 'next/font/google';
+import Script from 'next/script';
 
 const notoSans = Noto_Sans({ variable: '--font-sans' });
 
@@ -45,7 +46,10 @@ export default function RootLayout({
 }>) {
   return (
     <html className={notoSans.variable} lang='en'>
-      <body className='bg-slate-50 text-slate-900 antialiased'>{children}</body>
+      <body className='bg-slate-50 text-slate-900 antialiased'>
+        <Script src='/cubism4/live2dcubismcore.min.js' strategy='beforeInteractive' />
+        {children}
+      </body>
     </html>
   );
 }
