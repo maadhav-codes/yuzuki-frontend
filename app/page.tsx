@@ -1,6 +1,16 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
+
+const AvatarView = dynamic(() => import('@/components/AvatarView'), {
+  loading: () => (
+    <div className='flex h-full w-full items-center justify-center bg-slate-900 text-slate-400'>
+      Loading Avatar...
+    </div>
+  ),
+  ssr: false,
+});
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -169,7 +179,9 @@ export default function Home() {
             <CardDescription>Live2D model driven by voice state and mood.</CardDescription>
           </CardHeader>
           <CardContent className='relative flex-1 min-h-0 p-0 overflow-hidden'>
-            <div className='h-full min-h-125'>{/* 2D character */}</div>
+            <div className='h-full min-h-125'>
+              <AvatarView />
+            </div>
           </CardContent>
         </Card>
       </div>
