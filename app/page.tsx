@@ -34,7 +34,18 @@ export default function Home() {
   const [isReplying, setIsReplying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { speak, startListening, isSupported, error, stopAll } = useVoice();
+  const {
+    canRetrySTT,
+    error,
+    hasSTT,
+    hasTTS,
+    hasUsableTTSVoice,
+    isSupported,
+    retryListening,
+    speak,
+    startListening,
+    stopAll,
+  } = useVoice();
   const { isListening, isSpeaking, mood } = useAvatarStore();
   const { messages, addMessage } = useChatStore();
   const canSend = input.trim().length > 0 && !isReplying;
@@ -49,6 +60,16 @@ export default function Home() {
     if (isSpeaking) return { text: 'Speaking', variant: 'secondary' as const };
     return { text: 'Ready', variant: 'outline' as const };
   }, [isSupported, isListening, isSpeaking]);
+
+  const ttsFallbackCopy = useMemo(() => {
+    if (!hasTTS) {
+      return 'Voice output is unavailable in this browser. The app is in text-only mode.';
+    }
+    if (!hasUsableTTSVoice) {
+      return 'No TTS voice is currently available. Responses remain visible in chat (text-only mode).';
+    }
+    return null;
+  }, [hasTTS, hasUsableTTSVoice]);
 
   const formatTime = (timestamp: number) =>
     new Date(timestamp).toLocaleTimeString([], {
@@ -129,6 +150,23 @@ export default function Home() {
 
             <Separator className='bg-slate-700/70' />
 
+            {ttsFallbackCopy ? (
+              <p className='rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100'>
+                {ttsFallbackCopy}
+              </p>
+            ) : null}
+
+            {!hasSTT ? (
+              <p className='rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100'>
+                Microphone input is unavailable in this browser. You can still type messages.
+              </p>
+            ) : null}
+
+            <p className='rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300'>
+              Microphone notice: audio is only used to transcribe your speech after you tap the mic
+              button. The app does not start recording automatically.
+            </p>
+
             <div className='flex-1 space-y-2 overflow-y-auto rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'>
               {messages.length === 0 ? (
                 <p className='rounded-lg border border-dashed border-slate-700 bg-slate-900/60 px-3 py-4 text-center text-sm text-slate-400'>
@@ -157,7 +195,22 @@ export default function Home() {
               <div ref={messagesEndRef} />
             </div>
 
-            {error ? <p className='text-xs text-rose-400'>{error}</p> : null}
+            {error ? (
+              <div className='flex flex-wrap items-center gap-2'>
+                <p className='text-xs text-rose-400'>{error}</p>
+                {canRetrySTT ? (
+                  <Button
+                    className='h-7 rounded-md border-slate-600 bg-slate-800 px-2 text-xs text-slate-100 hover:bg-slate-700'
+                    onClick={retryListening}
+                    size='sm'
+                    type='button'
+                    variant='secondary'
+                  >
+                    Retry mic
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </CardContent>
           <CardFooter className='border-t border-slate-700/80 bg-slate-900/50 pt-4'>
             <div className='flex w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-950/70 p-2 shadow-lg shadow-black/25'>
@@ -191,6 +244,7 @@ export default function Home() {
                     ? 'border-rose-300/60 bg-rose-500 hover:bg-rose-400'
                     : 'border-slate-600 bg-slate-800 hover:bg-slate-700'
                 }`}
+                disabled={!hasSTT}
                 onClick={handleMicClick}
                 title={isListening || isSpeaking ? 'Stop voice session' : 'Start listening'}
                 variant='secondary'

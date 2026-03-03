@@ -39,26 +39,40 @@ declare global {
 // Custom hook to manage Text-to-Speech and Speech-to-Text functionality
 export const useVoice = () => {
   const [isSupported, setIsSupported] = useState<boolean>(false);
+  const [hasTTS, setHasTTS] = useState<boolean>(false);
+  const [hasSTT, setHasSTT] = useState<boolean>(false);
+  const [hasUsableTTSVoice, setHasUsableTTSVoice] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [canRetrySTT, setCanRetrySTT] = useState<boolean>(false);
   const { setMood, setIsSpeaking, setIsListening, reset } = useAvatarStore();
 
   // Ref to hold the SpeechRecognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const onResultRef = useRef<((text: string) => void) | null>(null);
 
   // Check for API support and clean up on unmount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const hasTTS = 'speechSynthesis' in window;
-      const hasSTT = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
-      setIsSupported(hasTTS && hasSTT);
+      const ttsSupported = 'speechSynthesis' in window;
+      const sttSupported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+      setHasTTS(ttsSupported);
+      setHasSTT(sttSupported);
+      setIsSupported(ttsSupported && sttSupported);
 
-      if (hasTTS) {
+      if (ttsSupported) {
+        const voices = window.speechSynthesis.getVoices();
+        setHasUsableTTSVoice(voices.length > 0);
         window.speechSynthesis.getVoices();
+        window.speechSynthesis.onvoiceschanged = () => {
+          const nextVoices = window.speechSynthesis.getVoices();
+          setHasUsableTTSVoice(nextVoices.length > 0);
+        };
       }
     }
 
     return () => {
       window.speechSynthesis.cancel();
+      window.speechSynthesis.onvoiceschanged = null;
       if (recognitionRef.current) recognitionRef.current.abort();
       reset();
     };
@@ -77,7 +91,7 @@ export const useVoice = () => {
   // Text-to-Speech function
   const speak = useCallback(
     (text: string) => {
-      if (!isSupported) return;
+      if (!hasTTS) return;
 
       // Stop any ongoing speech or recognition before starting new TTS
       window.speechSynthesis.cancel();
@@ -85,7 +99,13 @@ export const useVoice = () => {
 
       const utterance = new SpeechSynthesisUtterance(text);
       const voice = getBestVoice();
-      if (voice) utterance.voice = voice;
+      if (!voice) {
+        setError('Voice unavailable. Running in text-only mode.');
+        setHasUsableTTSVoice(false);
+        return;
+      }
+      setHasUsableTTSVoice(true);
+      utterance.voice = voice;
 
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
@@ -111,17 +131,19 @@ export const useVoice = () => {
 
       window.speechSynthesis.speak(utterance);
     },
-    [isSupported, setMood, setIsSpeaking, getBestVoice]
+    [hasTTS, setMood, setIsSpeaking, getBestVoice]
   );
 
   // Speech-to-Text function
   const startListening = useCallback(
     (onResult: (text: string) => void) => {
-      if (!isSupported) return;
+      if (!hasSTT) return;
+      onResultRef.current = onResult;
 
       // Stop any ongoing speech or recognition before starting new STT
       window.speechSynthesis.cancel();
       setError(null);
+      setCanRetrySTT(false);
 
       const SpeechRecognitionConstructor =
         window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -143,6 +165,7 @@ export const useVoice = () => {
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         const transcript = event.results[0][0].transcript;
         onResult(transcript);
+        setCanRetrySTT(false);
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -151,29 +174,27 @@ export const useVoice = () => {
         switch (event.error) {
           case 'not-allowed':
             setError('Microphone access was denied. Please check your browser settings.');
+            setCanRetrySTT(false);
             setMood('angry');
             break;
           case 'no-speech':
             setError("I didn't hear anything.");
+            setCanRetrySTT(true);
             setMood('sad');
             break;
           case 'network':
             setError('Network error. Speech recognition requires an internet connection.');
+            setCanRetrySTT(true);
             setMood('sad');
             break;
           case 'aborted':
             console.log('Speech recognition aborted.');
+            setCanRetrySTT(false);
             break;
           default:
             setError(`STT Error: ${event.error}`);
+            setCanRetrySTT(true);
             setMood('idle');
-        }
-
-        if (event.error !== 'aborted') {
-          setTimeout(() => {
-            setMood('idle');
-            setError(null);
-          }, 3000);
         }
       };
 
@@ -183,8 +204,13 @@ export const useVoice = () => {
 
       recognition.start();
     },
-    [isSupported, setIsListening, setMood]
+    [hasSTT, setIsListening, setMood]
   );
+
+  const retryListening = useCallback(() => {
+    if (!onResultRef.current || !hasSTT) return;
+    startListening(onResultRef.current);
+  }, [hasSTT, startListening]);
 
   // Function to stop all ongoing speech and recognition, and reset avatar state
   const stopAll = useCallback(() => {
@@ -193,5 +219,16 @@ export const useVoice = () => {
     reset();
   }, [reset]);
 
-  return { error, isSupported, speak, startListening, stopAll };
+  return {
+    canRetrySTT,
+    error,
+    hasSTT,
+    hasTTS,
+    hasUsableTTSVoice,
+    isSupported,
+    retryListening,
+    speak,
+    startListening,
+    stopAll,
+  };
 };

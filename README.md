@@ -21,3 +21,9 @@ Example:
 ```bash
 NEXT_PUBLIC_SITE_URL=https://your-domain.com
 ```
+
+## Microphone And Privacy Notice
+
+- The app only requests microphone access after the user clicks the mic button.
+- Audio is used for in-session speech-to-text transcription and is not started automatically.
+- If speech-to-text is unavailable or permission is denied, users can continue in text-only mode.
