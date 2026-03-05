@@ -1,6 +1,6 @@
 export interface SessionRead {
   id: number;
-  owner_id: number;
+  owner_id: string;
   created_at: string;
 }
 
@@ -9,7 +9,7 @@ export interface MessageRead {
   content: string;
   is_user: boolean;
   timestamp: string;
-  owner_id: number;
+  owner_id: string;
   chat_session_id: number;
 }
 

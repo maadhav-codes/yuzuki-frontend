@@ -18,7 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { useVoice } from '@/hooks/useVoice';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { useAvatarStore } from '@/store/avatarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import type { MessageRead } from '@/types/api';
@@ -39,10 +39,7 @@ const formatTime = (timestamp: number | string) =>
   });
 
 function isAuthError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-
-  const message = error.message.toLowerCase();
-  return message.includes('not authenticated') || message.includes('401');
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
 export default function ChatClient() {
@@ -84,7 +81,7 @@ export default function ChatClient() {
     if (!user || sessionId === null) return;
     try {
       setLoadingMessages(true);
-      const data = await api.getMessages(sessionId, 50);
+      const data = await api.getMessages(sessionId, 10);
       setMessages(data);
     } catch (err) {
       if (isAuthError(err)) {

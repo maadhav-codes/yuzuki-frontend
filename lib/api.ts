@@ -3,6 +3,16 @@ import { supabase } from '@/utils/supabase/client';
 
 const API_BASE = '/backend';
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function getAuthHeader(): Promise<string | null> {
   const {
     data: { session },
@@ -12,7 +22,7 @@ async function getAuthHeader(): Promise<string | null> {
 
 async function authFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = await getAuthHeader();
-  if (!token) throw new Error('Not authenticated');
+  if (!token) throw new ApiError('Not authenticated', 401);
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -23,8 +33,13 @@ async function authFetch<T>(url: string, options: RequestInit = {}): Promise<T> 
   const response = await fetch(url, { ...options, headers });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    const parsedBody = await response.json().catch(() => null);
+    const message =
+      parsedBody && typeof parsedBody === 'object' && 'detail' in parsedBody
+        ? String(parsedBody.detail)
+        : `HTTP error! status: ${response.status}`;
+
+    throw new ApiError(message, response.status);
   }
 
   if (response.status === 204) return {} as T;
