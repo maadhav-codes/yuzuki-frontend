@@ -1,7 +1,7 @@
-import type { MessageCreate, MessageRead, MessageUpdate } from '@/types/api';
+import type { MessageCreate, MessageRead, MessageUpdate, SessionRead } from '@/types/api';
 import { supabase } from '@/utils/supabase/client';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+const API_BASE = '/backend';
 
 async function getAuthHeader(): Promise<string | null> {
   const {
@@ -33,25 +33,34 @@ async function authFetch<T>(url: string, options: RequestInit = {}): Promise<T> 
 
 export const api = {
   createMessage: async (sessionId: number, data: MessageCreate): Promise<MessageRead> => {
-    return authFetch<MessageRead>(`${BACKEND_URL}/sessions/${sessionId}/messages`, {
+    return authFetch<MessageRead>(`${API_BASE}/sessions/${sessionId}/messages`, {
       body: JSON.stringify(data),
+      method: 'POST',
+    });
+  },
+  createSession: async (): Promise<SessionRead> => {
+    return authFetch<SessionRead>(`${API_BASE}/sessions`, {
       method: 'POST',
     });
   },
 
   deleteMessage: async (messageId: number): Promise<void> => {
-    return authFetch<void>(`${BACKEND_URL}/messages/${messageId}`, {
+    return authFetch<void>(`${API_BASE}/messages/${messageId}`, {
       method: 'DELETE',
     });
   },
+
+  getCurrentSession: async (): Promise<SessionRead> => {
+    return authFetch<SessionRead>(`${API_BASE}/sessions/current`);
+  },
   getMessages: async (sessionId: number, limit = 10, offset = 0): Promise<MessageRead[]> => {
     return authFetch<MessageRead[]>(
-      `${BACKEND_URL}/sessions/${sessionId}/messages?limit=${limit}&offset=${offset}`
+      `${API_BASE}/sessions/${sessionId}/messages?limit=${limit}&offset=${offset}`
     );
   },
 
   updateMessage: async (messageId: number, data: MessageUpdate): Promise<MessageRead> => {
-    return authFetch<MessageRead>(`${BACKEND_URL}/messages/${messageId}`, {
+    return authFetch<MessageRead>(`${API_BASE}/messages/${messageId}`, {
       body: JSON.stringify(data),
       method: 'PATCH',
     });

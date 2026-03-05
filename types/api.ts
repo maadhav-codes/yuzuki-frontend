@@ -1,3 +1,9 @@
+export interface SessionRead {
+  id: number;
+  owner_id: number;
+  created_at: string;
+}
+
 export interface MessageRead {
   id: number;
   content: string;

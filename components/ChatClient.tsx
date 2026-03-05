@@ -66,8 +66,7 @@ export default function ChatClient() {
   const { user, signOut } = useAuthStore();
   const router = useRouter();
 
-  const SESSION_ID = 1;
-
+  const [sessionId, setSessionId] = useState<number | null>(null);
   const [messages, setMessages] = useState<MessageRead[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(true);
 
@@ -82,10 +81,10 @@ export default function ChatClient() {
   }, [router, signOut]);
 
   const fetchMessages = useCallback(async () => {
-    if (!user) return;
+    if (!user || sessionId === null) return;
     try {
       setLoadingMessages(true);
-      const data = await api.getMessages(SESSION_ID, 50);
+      const data = await api.getMessages(sessionId, 50);
       setMessages(data);
     } catch (err) {
       if (isAuthError(err)) {
@@ -96,13 +95,39 @@ export default function ChatClient() {
     } finally {
       setLoadingMessages(false);
     }
+  }, [user, sessionId, handleAuthFailure]);
+
+  useEffect(() => {
+    if (!user) {
+      setSessionId(null);
+      setMessages([]);
+      setLoadingMessages(false);
+      return;
+    }
+
+    const loadSession = async () => {
+      try {
+        setLoadingMessages(true);
+        const session = await api.getCurrentSession();
+        setSessionId(session.id);
+      } catch (err) {
+        if (isAuthError(err)) {
+          await handleAuthFailure();
+          return;
+        }
+        console.error(err);
+        setLoadingMessages(false);
+      }
+    };
+
+    loadSession();
   }, [user, handleAuthFailure]);
 
   useEffect(() => {
-    if (user) {
+    if (sessionId !== null) {
       fetchMessages();
     }
-  }, [user, fetchMessages]);
+  }, [sessionId, fetchMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -128,12 +153,12 @@ export default function ChatClient() {
   const canSend = input.trim().length > 0 && !isReplying;
 
   const handleSend = async () => {
-    if (!input.trim() || isReplying) return;
+    if (!input.trim() || isReplying || sessionId === null) return;
 
     setIsReplying(true);
 
     try {
-      const newMsg = await api.createMessage(SESSION_ID, {
+      const newMsg = await api.createMessage(sessionId, {
         content: input,
         is_user: true,
       });

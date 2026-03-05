@@ -35,6 +35,17 @@ const nextConfig: NextConfig = {
   },
   poweredByHeader: false,
   reactCompiler: true,
+  async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (!backendUrl) return [];
+
+    return [
+      {
+        destination: `${backendUrl}/:path*`,
+        source: '/backend/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;
