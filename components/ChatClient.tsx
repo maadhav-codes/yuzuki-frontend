@@ -106,7 +106,7 @@ export default function ChatClient() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isReplying]);
+  });
 
   const statusBadge = useMemo(() => {
     if (!isSupported) return { text: 'Voice unsupported', variant: 'destructive' as const };

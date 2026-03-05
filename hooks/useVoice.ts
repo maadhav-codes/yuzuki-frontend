@@ -188,7 +188,6 @@ export const useVoice = () => {
             setMood('sad');
             break;
           case 'aborted':
-            console.log('Speech recognition aborted.');
             setCanRetrySTT(false);
             break;
           default:

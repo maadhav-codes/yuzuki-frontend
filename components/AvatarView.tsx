@@ -2,7 +2,7 @@
 
 import type { Application } from 'pixi.js';
 import type { Live2DModel } from 'pixi-live2d-display/cubism4';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
 import { useAvatarStore } from '@/store/avatarStore';
 
@@ -24,7 +24,7 @@ export default function AvatarView() {
   const [error, setError] = useState<string | null>(null);
   moodRef.current = mood;
 
-  const applyMood = (model: Live2DModel, currentMood: string) => {
+  const applyMood = useCallback((model: Live2DModel, currentMood: string) => {
     switch (currentMood) {
       case 'talking':
         model.motion('tap_body');
@@ -37,9 +37,9 @@ export default function AvatarView() {
         model.motion('idle');
         break;
     }
-  };
+  }, []);
 
-  const updateLayout = () => {
+  const updateLayout = useCallback(() => {
     const app = appRef.current;
     const model = modelRef.current;
     const container = containerRef.current;
@@ -57,7 +57,7 @@ export default function AvatarView() {
     model.anchor.set(0.5, 1);
     model.x = width / 2;
     model.y = height * 1.05;
-  };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -132,13 +132,13 @@ export default function AvatarView() {
         appRef.current = null;
       }
     };
-  }, []);
+  }, [applyMood, updateLayout]);
 
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
     applyMood(model, mood);
-  }, [mood]);
+  }, [mood, applyMood]);
 
   return (
     <div

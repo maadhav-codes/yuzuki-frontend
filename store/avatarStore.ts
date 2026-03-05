@@ -1,4 +1,3 @@
-/** biome-ignore-all assist/source/useSortedKeys: No Need */
 import { create } from 'zustand';
 
 type Mood = 'idle' | 'happy' | 'sad' | 'angry' | 'talking';
@@ -14,11 +13,11 @@ interface AvatarState {
 }
 
 export const useAvatarStore = create<AvatarState>((set) => ({
-  mood: 'idle',
   isListening: false,
   isSpeaking: false,
-  setMood: (mood) => set({ mood }),
+  mood: 'idle',
+  reset: () => set({ isListening: false, isSpeaking: false, mood: 'idle' }),
   setIsListening: (status) => set({ isListening: status }),
   setIsSpeaking: (status) => set({ isSpeaking: status }),
-  reset: () => set({ mood: 'idle', isListening: false, isSpeaking: false }),
+  setMood: (mood) => set({ mood }),
 }));
