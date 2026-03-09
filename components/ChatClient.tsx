@@ -125,7 +125,7 @@ export default function ChatClient() {
     try {
       await signOut();
     } catch {
-      // no-op: if token is already invalid, proceed with redirect
+      // Ignore sign out errors - we want to redirect to login regardless
     } finally {
       router.replace('/login');
     }
@@ -296,6 +296,7 @@ export default function ChatClient() {
               delta?: string;
               message?: string;
               error?: string;
+              message_id?: number;
             };
             const type = payload.type ?? '';
 
@@ -333,9 +334,21 @@ export default function ChatClient() {
             }
 
             if (type === 'done' || type === 'complete') {
-              if (assistantMessageIdRef.current === null) {
-                return;
+              const realId = payload.message_id;
+              if (realId && assistantMessageIdRef.current !== null) {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageIdRef.current ? { ...msg, id: realId } : msg
+                  )
+                );
               }
+              assistantMessageIdRef.current = null;
+              setIsReplying(false);
+              setHasFirstChunk(false);
+              return;
+            }
+
+            if (type === 'cancelled') {
               assistantMessageIdRef.current = null;
               setIsReplying(false);
               setHasFirstChunk(false);
@@ -425,8 +438,8 @@ export default function ChatClient() {
 
     const trimmed = input.trim();
     const payload = JSON.stringify({
-      conversation_id: sessionId,
       message: trimmed,
+      type: 'message',
     });
 
     const userMessage: MessageRead = {
@@ -484,8 +497,7 @@ export default function ChatClient() {
   const handleStopGeneration = () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'cancel' }));
-      setIsReplying(false);
-      setHasFirstChunk(false);
+      // UI will be updated when backend replies with 'cancelled'
     }
   };
 
