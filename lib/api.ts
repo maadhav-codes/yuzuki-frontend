@@ -67,7 +67,7 @@ export const api = {
   generateTTS: async (
     text: string
   ): Promise<{ success: boolean; audioUrl: string | null; note: string }> => {
-    const res = await fetch('/voice/tts', {
+    const res = await fetch(`${API_BASE}/voice/tts`, {
       body: JSON.stringify({ text }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
