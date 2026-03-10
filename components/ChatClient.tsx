@@ -1,6 +1,6 @@
 'use client';
 
-import { IconMicrophone, IconPlayerStopFilled, IconSend2 } from '@tabler/icons-react';
+import { IconMicrophone, IconPlayerStopFilled, IconSend2, IconVolume2 } from '@tabler/icons-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -48,6 +48,7 @@ export default function ChatClient() {
   const RECONNECT_CAP_MS = 30_000;
 
   const [input, setInput] = useState('');
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [isReplying, setIsReplying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -62,6 +63,7 @@ export default function ChatClient() {
   const unmountedRef = useRef(false);
   const reconnectingRef = useRef(false);
   const shouldReconnectRef = useRef(true);
+  const spokenRef = useRef(new Set<number>());
   const connectWebSocketRef = useRef<(activeSessionId: number, isReconnect?: boolean) => void>(
     () => {}
   );
@@ -74,6 +76,7 @@ export default function ChatClient() {
     hasUsableTTSVoice,
     isSupported,
     retryListening,
+    speakWithFallback,
     startListening,
     stopAll,
   } = useVoice();
@@ -91,6 +94,14 @@ export default function ChatClient() {
   const [reconnectInSec, setReconnectInSec] = useState<number | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [hasFirstChunk, setHasFirstChunk] = useState(false);
+
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && !lastMsg.is_user && !spokenRef.current.has(lastMsg.id) && hasTTS) {
+      spokenRef.current.add(lastMsg.id);
+      void speakWithFallback(lastMsg.content);
+    }
+  }, [messages, speakWithFallback, hasTTS]);
 
   const clearReconnectTimers = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -433,18 +444,18 @@ export default function ChatClient() {
 
   const canSend = input.trim().length > 0 && !isReplying && wsState === 'open';
 
-  const handleSend = async () => {
-    if (!input.trim() || isReplying || sessionId === null) return;
+  const handleSend = async (msg?: string) => {
+    const messageToSend = msg || input.trim();
+    if (!messageToSend || isReplying || sessionId === null) return;
 
-    const trimmed = input.trim();
     const payload = JSON.stringify({
-      message: trimmed,
+      message: messageToSend,
       type: 'message',
     });
 
     const userMessage: MessageRead = {
       chat_session_id: sessionId,
-      content: trimmed,
+      content: messageToSend,
       id: localIdRef.current,
       is_user: true,
       owner_id: user?.id ?? '',
@@ -486,11 +497,15 @@ export default function ChatClient() {
   const handleMicClick = () => {
     if (isListening || isSpeaking) {
       stopAll();
+      setLiveTranscript('');
       return;
     }
-
-    startListening((transcript) => {
-      setInput(transcript);
+    startListening((transcript, isFinal) => {
+      setLiveTranscript(transcript);
+      if (isFinal && transcript.trim()) {
+        setLiveTranscript('');
+        handleSend(transcript);
+      }
     });
   };
 
@@ -573,7 +588,7 @@ export default function ChatClient() {
               ) : (
                 messages.map((msg) => (
                   <div
-                    className={`max-w-[88%] rounded-2xl border px-3.5 py-2.5 shadow ${
+                    className={`max-w-[88%] rounded-2xl border px-3.5 py-2.5 shadow relative ${
                       msg.is_user
                         ? 'ml-auto border-sky-400/60 bg-sky-500 text-white shadow-sky-900/40'
                         : 'border-slate-700 bg-slate-800/90 text-slate-100 shadow-black/25'
@@ -581,10 +596,31 @@ export default function ChatClient() {
                     key={msg.id}
                   >
                     <p className='whitespace-pre-wrap text-sm leading-relaxed'>{msg.content}</p>
+
+                    {!msg.is_user && (
+                      <button
+                        aria-label='Speak response'
+                        className='absolute -bottom-2 -right-2 rounded-full bg-slate-800 p-1.5 text-cyan-400 hover:bg-cyan-950 transition-colors shadow-md'
+                        onClick={() => speakWithFallback(msg.content)}
+                        title='Speak this message'
+                        type='button'
+                      >
+                        <IconVolume2 className='size-4' />
+                      </button>
+                    )}
+
                     <p className='mt-1 text-[11px] opacity-70'>{formatTime(msg.timestamp)}</p>
                   </div>
                 ))
               )}
+
+              {liveTranscript && (
+                <div className='max-w-[88%] rounded-2xl border border-dashed border-cyan-400 bg-cyan-950/70 px-3.5 py-2.5 text-sm text-cyan-300'>
+                  <span className='font-medium'>You:</span> {liveTranscript}...
+                  <div className='mt-2 h-1 w-8 animate-pulse rounded bg-cyan-400' />
+                </div>
+              )}
+
               {loadingMessages && (
                 <div className='max-w-[88%] rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
                   Loading history...
@@ -635,7 +671,7 @@ export default function ChatClient() {
                 aria-label='Send message'
                 className='h-12 rounded-xl bg-linear-to-r from-cyan-400 to-sky-500 px-5 font-semibold text-slate-950 shadow-md shadow-cyan-900/40 hover:from-cyan-300 hover:to-sky-400 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-300'
                 disabled={!canSend}
-                onClick={handleSend}
+                onClick={() => handleSend}
                 title='Send message'
               >
                 <IconSend2 aria-hidden='true' className='size-4' />

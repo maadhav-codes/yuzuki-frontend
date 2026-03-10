@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '@/lib/api';
 import { useAvatarStore } from '@/store/avatarStore';
 
 interface SpeechRecognitionErrorEvent extends Event {
@@ -27,12 +28,8 @@ interface SpeechRecognition extends EventTarget {
 // Extend the Window interface to include SpeechRecognition types
 declare global {
   interface Window {
-    SpeechRecognition?: {
-      new (): SpeechRecognition;
-    };
-    webkitSpeechRecognition?: {
-      new (): SpeechRecognition;
-    };
+    SpeechRecognition?: { new (): SpeechRecognition };
+    webkitSpeechRecognition?: { new (): SpeechRecognition };
   }
 }
 
@@ -48,31 +45,29 @@ export const useVoice = () => {
 
   // Ref to hold the SpeechRecognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const onResultRef = useRef<((text: string) => void) | null>(null);
+  const onResultRef = useRef<((finalText: string, isFinal: boolean) => void) | null>(null);
 
-  // Check for API support and clean up on unmount
+  // Support + voices check
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const ttsSupported = 'speechSynthesis' in window;
-      const sttSupported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
-      setHasTTS(ttsSupported);
-      setHasSTT(sttSupported);
-      setIsSupported(ttsSupported && sttSupported);
+    if (typeof window === 'undefined') return;
 
-      if (ttsSupported) {
-        const voices = window.speechSynthesis.getVoices();
-        setHasUsableTTSVoice(voices.length > 0);
-        window.speechSynthesis.getVoices();
-        window.speechSynthesis.onvoiceschanged = () => {
-          const nextVoices = window.speechSynthesis.getVoices();
-          setHasUsableTTSVoice(nextVoices.length > 0);
-        };
-      }
+    const ttsSupported = 'speechSynthesis' in window;
+    const sttSupported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+
+    setHasTTS(ttsSupported);
+    setHasSTT(sttSupported);
+    setIsSupported(ttsSupported && sttSupported);
+
+    if (ttsSupported) {
+      const updateVoices = () => {
+        setHasUsableTTSVoice(window.speechSynthesis.getVoices().length > 0);
+      };
+      updateVoices();
+      window.speechSynthesis.onvoiceschanged = updateVoices;
     }
 
     return () => {
       window.speechSynthesis.cancel();
-      window.speechSynthesis.onvoiceschanged = null;
       if (recognitionRef.current) recognitionRef.current.abort();
       reset();
     };
@@ -95,18 +90,9 @@ export const useVoice = () => {
 
       // Stop any ongoing speech or recognition before starting new TTS
       window.speechSynthesis.cancel();
-      if (recognitionRef.current) recognitionRef.current.abort();
-
       const utterance = new SpeechSynthesisUtterance(text);
       const voice = getBestVoice();
-      if (!voice) {
-        setError('Voice unavailable. Running in text-only mode.');
-        setHasUsableTTSVoice(false);
-        return;
-      }
-      setHasUsableTTSVoice(true);
-      utterance.voice = voice;
-
+      if (voice) utterance.voice = voice;
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
 
@@ -119,24 +105,51 @@ export const useVoice = () => {
         setIsSpeaking(false);
         setMood('idle');
       };
-
-      utterance.onerror = (e: SpeechSynthesisErrorEvent) => {
-        if (e.error !== 'interrupted') {
-          console.error('TTS Error:', e);
-          setError(`TTS Error: ${e.error}`);
-        }
+      utterance.onerror = () => {
         setIsSpeaking(false);
         setMood('idle');
       };
 
       window.speechSynthesis.speak(utterance);
     },
-    [hasTTS, setMood, setIsSpeaking, getBestVoice]
+    [hasTTS, getBestVoice, setIsSpeaking, setMood]
   );
 
-  // Speech-to-Text function
+  const speakWithFallback = useCallback(
+    async (text: string) => {
+      if (!hasTTS) return;
+
+      if (hasUsableTTSVoice) {
+        speak(text);
+        return;
+      }
+
+      try {
+        const data = await api.generateTTS(text);
+        if (data.audioUrl) {
+          const audio = new Audio(data.audioUrl);
+          audio.onplay = () => {
+            setIsSpeaking(true);
+            setMood('talking');
+          };
+          audio.onended = () => {
+            setIsSpeaking(false);
+            setMood('idle');
+          };
+          await audio.play();
+          return;
+        }
+      } catch (err) {
+        console.warn('Backend TTS fallback failed, using client TTS', err);
+      }
+
+      speak(text);
+    },
+    [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood]
+  );
+
   const startListening = useCallback(
-    (onResult: (text: string) => void) => {
+    (onResult: (transcript: string, isFinal: boolean) => void) => {
       if (!hasSTT) return;
       onResultRef.current = onResult;
 
@@ -154,7 +167,7 @@ export const useVoice = () => {
       recognitionRef.current = recognition;
 
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
@@ -163,9 +176,13 @@ export const useVoice = () => {
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        const transcript = event.results[0][0].transcript;
-        onResult(transcript);
-        setCanRetrySTT(false);
+        let interim = '';
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) final = event.results[i][0].transcript;
+          else interim = event.results[i][0].transcript;
+        }
+        onResult(final || interim, !!final);
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -187,9 +204,6 @@ export const useVoice = () => {
             setCanRetrySTT(true);
             setMood('sad');
             break;
-          case 'aborted':
-            setCanRetrySTT(false);
-            break;
           default:
             setError(`STT Error: ${event.error}`);
             setCanRetrySTT(true);
@@ -197,19 +211,15 @@ export const useVoice = () => {
         }
       };
 
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
+      recognition.onend = () => setIsListening(false);
       recognition.start();
     },
     [hasSTT, setIsListening, setMood]
   );
 
   const retryListening = useCallback(() => {
-    if (!onResultRef.current || !hasSTT) return;
-    startListening(onResultRef.current);
-  }, [hasSTT, startListening]);
+    if (onResultRef.current) startListening(onResultRef.current);
+  }, [startListening]);
 
   // Function to stop all ongoing speech and recognition, and reset avatar state
   const stopAll = useCallback(() => {
@@ -226,7 +236,7 @@ export const useVoice = () => {
     hasUsableTTSVoice,
     isSupported,
     retryListening,
-    speak,
+    speakWithFallback,
     startListening,
     stopAll,
   };

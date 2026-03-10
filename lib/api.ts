@@ -64,6 +64,19 @@ export const api = {
       method: 'DELETE',
     });
   },
+  generateTTS: async (
+    text: string
+  ): Promise<{ success: boolean; audioUrl: string | null; note: string }> => {
+    const res = await fetch('/voice/tts', {
+      body: JSON.stringify({ text }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    });
+    if (!res.ok) {
+      throw new Error(`TTS request failed with status: ${res.status}`);
+    }
+    return res.json();
+  },
 
   getCurrentSession: async (): Promise<SessionRead> => {
     return authFetch<SessionRead>(`${API_BASE}/sessions/current`);
