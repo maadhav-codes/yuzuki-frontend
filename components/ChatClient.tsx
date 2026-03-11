@@ -21,6 +21,9 @@ import { useVoice } from '@/hooks/useVoice';
 import { ApiError, api } from '@/lib/api';
 import { useAvatarStore } from '@/store/avatarStore';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useChatStore } from '@/store/useChatStore';
+import { useLoadingStore } from '@/store/useLoadingStore';
+import { useUserStore } from '@/store/useUserStore';
 import type { MessageRead } from '@/types/api';
 import { supabase } from '@/utils/supabase/client';
 
@@ -49,7 +52,6 @@ export default function ChatClient() {
 
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [isReplying, setIsReplying] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,18 +84,30 @@ export default function ChatClient() {
   } = useVoice();
 
   const { isListening, isSpeaking, mood } = useAvatarStore();
-  const { user, signOut } = useAuthStore();
+  const user = useUserStore((state) => state.user);
+  const { signOut } = useAuthStore();
+  const setChatLoading = useLoadingStore((state) => state.setChatLoading);
+  const {
+    chatError,
+    hasFirstChunk,
+    isReplying,
+    loadingMessages,
+    messages,
+    decrementReconnectInSec,
+    reconnectInSec,
+    resetChatState,
+    sessionId,
+    setChatError,
+    setHasFirstChunk,
+    setIsReplying,
+    setLoadingMessages,
+    setMessages,
+    setReconnectInSec,
+    setSessionId,
+    setWsState,
+    wsState,
+  } = useChatStore();
   const router = useRouter();
-
-  const [sessionId, setSessionId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<MessageRead[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(true);
-  const [wsState, setWsState] = useState<
-    'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed'
-  >('idle');
-  const [reconnectInSec, setReconnectInSec] = useState<number | null>(null);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [hasFirstChunk, setHasFirstChunk] = useState(false);
 
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
@@ -113,7 +127,7 @@ export default function ChatClient() {
       reconnectCountdownRef.current = null;
     }
     setReconnectInSec(null);
-  }, []);
+  }, [setReconnectInSec]);
 
   const stopHeartbeat = useCallback(() => {
     if (heartbeatRef.current) {
@@ -146,6 +160,7 @@ export default function ChatClient() {
     if (!user || sessionId === null) return;
     try {
       setLoadingMessages(true);
+      setChatLoading(true);
       const data = await api.getMessages(sessionId, 10);
       setMessages(data);
     } catch (err) {
@@ -156,24 +171,22 @@ export default function ChatClient() {
       console.error(err);
     } finally {
       setLoadingMessages(false);
+      setChatLoading(false);
     }
-  }, [user, sessionId, handleAuthFailure]);
+  }, [user, sessionId, handleAuthFailure, setLoadingMessages, setChatLoading, setMessages]);
 
   useEffect(() => {
     return () => {
       unmountedRef.current = true;
       closeSocket();
+      resetChatState();
+      setChatLoading(false);
     };
-  }, [closeSocket]);
+  }, [closeSocket, resetChatState, setChatLoading]);
 
   useEffect(() => {
     if (!user) {
-      setSessionId(null);
-      setMessages([]);
-      setLoadingMessages(false);
-      setWsState('closed');
-      setIsReplying(false);
-      setHasFirstChunk(false);
+      resetChatState();
       closeSocket();
       return;
     }
@@ -181,20 +194,31 @@ export default function ChatClient() {
     const loadSession = async () => {
       try {
         setLoadingMessages(true);
+        setChatLoading(true);
         const session = await api.getCurrentSession();
         setSessionId(session.id);
       } catch (err) {
         if (isAuthError(err)) {
           await handleAuthFailure();
-          return;
+        } else {
+          console.error(err);
         }
-        console.error(err);
+      } finally {
         setLoadingMessages(false);
+        setChatLoading(false);
       }
     };
 
     loadSession();
-  }, [user, handleAuthFailure, closeSocket]);
+  }, [
+    user,
+    handleAuthFailure,
+    closeSocket,
+    resetChatState,
+    setLoadingMessages,
+    setChatLoading,
+    setSessionId,
+  ]);
 
   useEffect(() => {
     if (sessionId !== null) {
@@ -239,7 +263,7 @@ export default function ChatClient() {
 
       clearReconnectTimers();
       reconnectCountdownRef.current = setInterval(() => {
-        setReconnectInSec((prev) => (prev && prev > 0 ? prev - 1 : 0));
+        decrementReconnectInSec();
       }, 1000);
 
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -247,7 +271,7 @@ export default function ChatClient() {
         connectWebSocketRef.current(activeSessionId, true);
       }, totalDelay);
     },
-    [clearReconnectTimers]
+    [clearReconnectTimers, decrementReconnectInSec, setReconnectInSec, setWsState]
   );
 
   const connectWebSocket = useCallback(
@@ -405,6 +429,12 @@ export default function ChatClient() {
       getWebSocketUrl,
       handleAuthFailure,
       scheduleReconnect,
+      setChatError,
+      setHasFirstChunk,
+      setIsReplying,
+      setMessages,
+      setReconnectInSec,
+      setWsState,
       stopHeartbeat,
       user?.id,
     ]
@@ -671,7 +701,7 @@ export default function ChatClient() {
                 aria-label='Send message'
                 className='h-12 rounded-xl bg-linear-to-r from-cyan-400 to-sky-500 px-5 font-semibold text-slate-950 shadow-md shadow-cyan-900/40 hover:from-cyan-300 hover:to-sky-400 disabled:from-slate-700 disabled:to-slate-700 disabled:text-slate-300'
                 disabled={!canSend}
-                onClick={() => handleSend}
+                onClick={() => void handleSend()}
                 title='Send message'
               >
                 <IconSend2 aria-hidden='true' className='size-4' />

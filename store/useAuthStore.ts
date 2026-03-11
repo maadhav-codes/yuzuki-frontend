@@ -1,5 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { create } from 'zustand';
+import { useLoadingStore } from '@/store/useLoadingStore';
+import { useUserStore } from '@/store/useUserStore';
 import { supabase } from '@/utils/supabase/client';
 
 interface AuthState {
@@ -20,19 +22,27 @@ export const useAuthStore = create<AuthState>((set, _) => ({
       .getSession()
       .then(({ data: { session }, error }) => {
         if (error) {
+          useLoadingStore.getState().setAuthLoading(false);
+          useUserStore.getState().setUser(null);
           set({ loading: false, session: null, user: null });
           return;
         }
 
+        useLoadingStore.getState().setAuthLoading(false);
+        useUserStore.getState().setUser(session?.user ?? null);
         set({ loading: false, session, user: session?.user ?? null });
       })
       .catch(() => {
+        useLoadingStore.getState().setAuthLoading(false);
+        useUserStore.getState().setUser(null);
         set({ loading: false, session: null, user: null });
       });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      useLoadingStore.getState().setAuthLoading(false);
+      useUserStore.getState().setUser(session?.user ?? null);
       set({ loading: false, session, user: session?.user ?? null });
     });
 
@@ -42,9 +52,16 @@ export const useAuthStore = create<AuthState>((set, _) => ({
   },
   loading: true,
   session: null,
-  setSession: (session) => set({ loading: false, session, user: session?.user ?? null }),
+  setSession: (session) => {
+    useLoadingStore.getState().setAuthLoading(false);
+    useUserStore.getState().setUser(session?.user ?? null);
+    set({ loading: false, session, user: session?.user ?? null });
+  },
 
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    useUserStore.getState().setUser(user);
+    set({ user });
+  },
 
   signIn: async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -58,6 +75,7 @@ export const useAuthStore = create<AuthState>((set, _) => ({
   signOut: async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    useUserStore.getState().setUser(null);
     set({ session: null, user: null });
   },
 
