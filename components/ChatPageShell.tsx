@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import ChatConversation from '@/components/ChatConversation';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ function getInitials(nameOrEmail: string | null | undefined) {
 }
 
 export default function ChatPageShell() {
+  const router = useRouter();
   const user = useUserStore((state) => state.user);
   const signOut = useAuthStore((state) => state.signOut);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -40,6 +42,7 @@ export default function ChatPageShell() {
     setIsSigningOut(true);
     try {
       await signOut();
+      router.replace('/login');
     } finally {
       setIsSigningOut(false);
     }
@@ -73,7 +76,7 @@ export default function ChatPageShell() {
             </div>
 
             <Button
-              className='border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800'
+              className='h-9 border-rose-400/40 bg-rose-500/10 px-3 text-rose-100 hover:border-rose-300/60 hover:bg-rose-500/20 hover:text-rose-50 focus-visible:ring-rose-400/70 disabled:cursor-not-allowed disabled:opacity-60'
               disabled={isSigningOut}
               onClick={handleLogout}
               variant='outline'
@@ -84,7 +87,7 @@ export default function ChatPageShell() {
         </div>
       </header>
 
-      <div className='mx-auto w-full max-w-6xl px-4 py-4 md:px-6'>
+      <div className='mx-auto h-[calc(100vh-4rem)] w-full max-w-7xl overflow-hidden px-4 py-2 md:px-6'>
         <ChatConversation />
       </div>
     </main>

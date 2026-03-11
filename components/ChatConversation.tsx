@@ -53,6 +53,7 @@ export default function ChatConversation() {
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -452,7 +453,9 @@ export default function ChatConversation() {
   }, [sessionId, user, connectWebSocket]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   });
 
   const statusBadge = useMemo(() => {
@@ -554,8 +557,8 @@ export default function ChatConversation() {
         : null;
 
   return (
-    <main className='min-h-screen p-2 text-slate-100 md:p-4'>
-      <div className='mx-auto grid h-[calc(100vh-2rem)] max-w-7xl gap-4 lg:h-[calc(100vh-3rem)] lg:grid-cols-[1.05fr_1.35fr]'>
+    <main className='h-full p-2 text-slate-100 md:p-4'>
+      <div className='mx-auto grid h-full max-w-7xl gap-4 lg:grid-cols-[1.05fr_1.35fr]'>
         <Card className='flex min-h-0 flex-col border-slate-700/60 bg-slate-900/70 shadow-2xl shadow-cyan-950/20 backdrop-blur'>
           <CardHeader className='space-y-3 pb-3'>
             <div className='space-y-1'>
@@ -610,7 +613,10 @@ export default function ChatConversation() {
               button. The app does not start recording automatically.
             </p>
 
-            <div className='flex-1 space-y-2 overflow-y-auto rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'>
+            <div
+              className='flex-1 space-y-2 overflow-y-auto rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'
+              ref={messagesContainerRef}
+            >
               {messages.length === 0 && !loadingMessages ? (
                 <p className='rounded-lg border border-dashed border-slate-700 bg-slate-900/60 px-3 py-4 text-center text-sm text-slate-400'>
                   No messages yet. Ask something or tap the mic to begin.
