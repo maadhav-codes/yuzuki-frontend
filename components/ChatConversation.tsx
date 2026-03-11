@@ -46,7 +46,7 @@ function isAuthError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-export default function ChatClient() {
+export default function ChatConversation() {
   const HEARTBEAT_MS = 35_000;
   const RECONNECT_CAP_MS = 30_000;
 
@@ -554,7 +554,7 @@ export default function ChatClient() {
         : null;
 
   return (
-    <main className='min-h-screen bg-[radial-gradient(circle_at_top_left,#1e293b_0%,#020617_40%,#020617_100%)] p-4 text-slate-100 md:p-6'>
+    <main className='min-h-screen p-2 text-slate-100 md:p-4'>
       <div className='mx-auto grid h-[calc(100vh-2rem)] max-w-7xl gap-4 lg:h-[calc(100vh-3rem)] lg:grid-cols-[1.05fr_1.35fr]'>
         <Card className='flex min-h-0 flex-col border-slate-700/60 bg-slate-900/70 shadow-2xl shadow-cyan-950/20 backdrop-blur'>
           <CardHeader className='space-y-3 pb-3'>
