@@ -1,11 +1,13 @@
 'use client';
 
+import { IconBrandGoogle } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
 
 export default function LoginPage() {
@@ -15,13 +17,21 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
-  const { signIn, signUp, user, loading } = useAuthStore();
+  const { signIn, signInWithGoogle, signUp, user, loading } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace('/');
+      void api
+        .getCurrentSession()
+        .catch(() => {
+          // Ignore backend bootstrap errors and continue to chat.
+        })
+        .finally(() => {
+          router.replace('/chat');
+        });
     }
   }, [loading, router, user]);
 
@@ -37,7 +47,6 @@ export default function LoginPage() {
         setNotice('Account created. Check your email to confirm your account before signing in.');
       } else {
         await signIn(email, password);
-        router.replace('/');
       }
     } catch (err: unknown) {
       const message =
@@ -48,18 +57,34 @@ export default function LoginPage() {
     }
   };
 
-  const modeTitle = isSignUp ? 'Create Account' : 'Welcome Back';
-  const modeDescription = isSignUp
-    ? 'Sign up with email and password.'
-    : 'Sign in to your account.';
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setNotice(null);
+    setIsGoogleSubmitting(true);
+
+    try {
+      await signInWithGoogle(`${window.location.origin}/chat`);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
+      setError(message);
+      setIsGoogleSubmitting(false);
+    }
+  };
 
   return (
     <main className='min-h-screen bg-[radial-gradient(circle_at_top_left,#1e293b_0%,#020617_40%,#020617_100%)] p-4 text-slate-100 md:p-6'>
       <div className='mx-auto flex min-h-[calc(100vh-2rem)] w-full max-w-md items-center'>
         <Card className='w-full border-slate-700/60 bg-slate-900/70 shadow-2xl shadow-cyan-950/20 backdrop-blur'>
           <CardHeader className='space-y-1 pb-2'>
-            <h1 className='text-xl tracking-tight text-slate-50'>{modeTitle}</h1>
-            <p className='text-sm text-slate-300'>{modeDescription}</p>
+            <h1 className='text-xl tracking-tight text-slate-50'>
+              {isSignUp ? 'Create Account' : 'Welcome Back'}
+            </h1>
+            <p className='text-sm text-slate-300'>
+              {isSignUp
+                ? 'Sign up with email and password, or continue with Google.'
+                : 'Sign in with email/password or Google.'}
+            </p>
           </CardHeader>
           <CardContent className='space-y-4'>
             <form className='space-y-4' onSubmit={handleSubmit}>
@@ -102,6 +127,16 @@ export default function LoginPage() {
                 {isSubmitting ? 'Authenticating...' : isSignUp ? 'Create Account' : 'Sign In'}
               </Button>
             </form>
+            <Button
+              className='flex h-11 w-full items-center justify-center gap-2 border border-slate-600/80 bg-slate-800 font-medium text-slate-100 transition-colors hover:bg-slate-700 hover:text-white disabled:bg-slate-800/50 disabled:text-slate-500'
+              disabled={isGoogleSubmitting}
+              onClick={handleGoogleSignIn}
+              type='button'
+              variant='outline'
+            >
+              <IconBrandGoogle className='h-5 w-5' stroke={2} />
+              {isGoogleSubmitting ? 'Redirecting to Google...' : 'Sign in with Google'}
+            </Button>
             {error ? (
               <p className='rounded-lg border border-rose-400/40 bg-rose-500/10 px-3 py-2 text-rose-200'>
                 {error}
