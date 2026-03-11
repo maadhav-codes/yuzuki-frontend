@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useVoice } from '@/hooks/useVoice';
 import { ApiError, api } from '@/lib/api';
@@ -52,7 +53,6 @@ export default function ChatConversation() {
 
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -613,8 +613,8 @@ export default function ChatConversation() {
               button. The app does not start recording automatically.
             </p>
 
-            <div
-              className='flex-1 space-y-2 overflow-y-auto rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'
+            <ScrollArea
+              className='flex-1 space-y-2 rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'
               ref={messagesContainerRef}
             >
               {messages.length === 0 && !loadingMessages ? (
@@ -624,28 +624,41 @@ export default function ChatConversation() {
               ) : (
                 messages.map((msg) => (
                   <div
-                    className={`max-w-[88%] rounded-2xl border px-3.5 py-2.5 shadow relative ${
-                      msg.is_user
-                        ? 'ml-auto border-sky-400/60 bg-sky-500 text-white shadow-sky-900/40'
-                        : 'border-slate-700 bg-slate-800/90 text-slate-100 shadow-black/25'
-                    }`}
+                    className={`flex w-full ${msg.is_user ? 'justify-end' : 'justify-start'}`}
                     key={msg.id}
                   >
-                    <p className='whitespace-pre-wrap text-sm leading-relaxed'>{msg.content}</p>
-
-                    {!msg.is_user && (
-                      <button
-                        aria-label='Speak response'
-                        className='absolute -bottom-2 -right-2 rounded-full bg-slate-800 p-1.5 text-cyan-400 hover:bg-cyan-950 transition-colors shadow-md'
-                        onClick={() => speakWithFallback(msg.content)}
-                        title='Speak this message'
-                        type='button'
+                    <div
+                      className={`flex max-w-[88%] items-end gap-2 ${msg.is_user ? 'flex-row-reverse' : ''}`}
+                    >
+                      {!msg.is_user ? (
+                        <div className='mb-1 flex size-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/15 text-[10px] font-semibold text-cyan-200'>
+                          AI
+                        </div>
+                      ) : null}
+                      <div
+                        className={`rounded-2xl border px-3.5 py-2.5 shadow relative ${
+                          msg.is_user
+                            ? 'border-sky-400/60 bg-sky-500 text-white shadow-sky-900/40'
+                            : 'border-slate-700 bg-slate-800/90 text-slate-100 shadow-black/25'
+                        }`}
                       >
-                        <IconVolume2 className='size-4' />
-                      </button>
-                    )}
+                        <p className='whitespace-pre-wrap text-sm leading-relaxed'>{msg.content}</p>
 
-                    <p className='mt-1 text-[11px] opacity-70'>{formatTime(msg.timestamp)}</p>
+                        {!msg.is_user && (
+                          <button
+                            aria-label='Speak response'
+                            className='absolute -bottom-2 -right-2 rounded-full bg-slate-800 p-1.5 text-cyan-400 hover:bg-cyan-950 transition-colors shadow-md'
+                            onClick={() => speakWithFallback(msg.content)}
+                            title='Speak this message'
+                            type='button'
+                          >
+                            <IconVolume2 className='size-4' />
+                          </button>
+                        )}
+
+                        <p className='mt-1 text-[11px] opacity-70'>{formatTime(msg.timestamp)}</p>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
@@ -658,17 +671,30 @@ export default function ChatConversation() {
               )}
 
               {loadingMessages && (
-                <div className='max-w-[88%] rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
-                  Loading history...
+                <div className='flex w-full justify-start'>
+                  <div className='flex max-w-[88%] items-end gap-2'>
+                    <div className='mb-1 flex size-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/15 text-[10px] font-semibold text-cyan-200'>
+                      AI
+                    </div>
+                    <div className='rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
+                      Thinking...
+                    </div>
+                  </div>
                 </div>
               )}
               {isReplying && !hasFirstChunk && (
-                <div className='max-w-[88%] rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
-                  AI is thinking...
+                <div className='flex w-full justify-start'>
+                  <div className='flex max-w-[88%] items-end gap-2'>
+                    <div className='mb-1 flex size-7 shrink-0 items-center justify-center rounded-full border border-cyan-400/40 bg-cyan-500/15 text-[10px] font-semibold text-cyan-200'>
+                      AI
+                    </div>
+                    <div className='rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
+                      Thinking...
+                    </div>
+                  </div>
                 </div>
               )}
-              <div ref={messagesEndRef} />
-            </div>
+            </ScrollArea>
 
             {error ? (
               <div className='flex flex-wrap items-center gap-2'>
