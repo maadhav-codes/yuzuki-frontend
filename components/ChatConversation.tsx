@@ -20,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useVoice } from '@/hooks/useVoice';
 import { ApiError, api } from '@/lib/api';
+import { parseEmotionAndContent } from '@/lib/chat/emotionParser';
 import { useAvatarStore } from '@/store/avatarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -84,7 +85,7 @@ export default function ChatConversation() {
     stopAll,
   } = useVoice();
 
-  const { isListening, isSpeaking, mood } = useAvatarStore();
+  const { isListening, isSpeaking, mood, setMood } = useAvatarStore();
   const user = useUserStore((state) => state.user);
   const { signOut } = useAuthStore();
   const setChatLoading = useLoadingStore((state) => state.setChatLoading);
@@ -339,6 +340,9 @@ export default function ChatConversation() {
             if (type === 'chunk') {
               const chunk = payload.content ?? payload.delta ?? payload.message ?? '';
               if (!chunk) return;
+              const { mood: parsedMood, content } = parseEmotionAndContent(chunk);
+              setMood(parsedMood);
+              if (!content) return;
 
               setHasFirstChunk(true);
               setIsReplying(true);
@@ -353,7 +357,7 @@ export default function ChatConversation() {
                     ...prev,
                     {
                       chat_session_id: activeSessionId,
-                      content: chunk,
+                      content,
                       id: createdId,
                       is_user: false,
                       owner_id: user?.id ?? '',
@@ -363,7 +367,7 @@ export default function ChatConversation() {
                 }
 
                 return prev.map((msg) =>
-                  msg.id === assistantId ? { ...msg, content: `${msg.content}${chunk}` } : msg
+                  msg.id === assistantId ? { ...msg, content: `${msg.content}${content}` } : msg
                 );
               });
               return;
@@ -435,6 +439,7 @@ export default function ChatConversation() {
       setIsReplying,
       setMessages,
       setReconnectInSec,
+      setMood,
       setWsState,
       stopHeartbeat,
       user?.id,
