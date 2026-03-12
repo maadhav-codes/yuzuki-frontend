@@ -677,7 +677,11 @@ export default function ChatConversation() {
                       AI
                     </div>
                     <div className='rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
-                      Thinking...
+                      <div className='flex items-center gap-1.5'>
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300 [animation-delay:-0.3s]' />
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300 [animation-delay:-0.15s]' />
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300' />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -689,7 +693,11 @@ export default function ChatConversation() {
                       AI
                     </div>
                     <div className='rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-sm text-slate-300 shadow shadow-black/25'>
-                      Thinking...
+                      <div className='flex items-center gap-1.5'>
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300 [animation-delay:-0.3s]' />
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300 [animation-delay:-0.15s]' />
+                        <span className='size-2 rounded-full animate-bounce bg-slate-300' />
+                      </div>
                     </div>
                   </div>
                 </div>
