@@ -1,7 +1,7 @@
 'use client';
 
 import type { Application } from 'pixi.js';
-import type { Live2DModel } from 'pixi-live2d-display/cubism4';
+import type { Live2DModel } from 'pixi-live2d-display-advanced/cubism4';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
 import { useAvatarStore } from '@/store/avatarStore';
@@ -68,7 +68,7 @@ export default function AvatarView() {
       if (!canvas || !container) return;
 
       const PIXI = await import('pixi.js');
-      const { Live2DModel } = await import('pixi-live2d-display/cubism4');
+      const { Live2DModel } = await import('pixi-live2d-display-advanced/cubism4');
 
       if (!isMounted) return;
 
