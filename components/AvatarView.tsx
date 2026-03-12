@@ -5,6 +5,7 @@ import type { Live2DModel } from 'pixi-live2d-display-advanced/cubism4';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
 import { applyLive2DMood } from '@/lib/live2d/moodController';
+import { getPerformanceProfile } from '@/lib/live2d/performanceProfile';
 import { useAvatarStore } from '@/store/avatarStore';
 
 declare global {
@@ -61,17 +62,18 @@ export default function AvatarView() {
       if (!window.PIXI) {
         window.PIXI = PIXI;
       }
-      Live2DModel.registerTicker(PIXI.Ticker);
+      const perf = getPerformanceProfile();
 
       const { width, height } = container.getBoundingClientRect();
       const app = new PIXI.Application({
         autoDensity: true,
         backgroundAlpha: 0,
         height: Math.max(height, 1),
-        resolution: window.devicePixelRatio || 1,
+        resolution: Math.min(window.devicePixelRatio || 1, perf.resolutionCap),
         view: canvas,
         width: Math.max(width, 1),
       }) as Application;
+      app.ticker.maxFPS = perf.maxFPS;
 
       attachLegacyInteractionBridge(app);
 
@@ -79,7 +81,9 @@ export default function AvatarView() {
 
       try {
         setError(null);
-        const model = await Live2DModel.from('/models/Hiyori/Hiyori.model3.json');
+        const model = await Live2DModel.from('/models/Hiyori/Hiyori.model3.json', {
+          ticker: app.ticker,
+        });
 
         if (!isMounted) {
           model.destroy();
