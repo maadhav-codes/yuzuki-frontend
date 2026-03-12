@@ -4,6 +4,7 @@ import type { Application } from 'pixi.js';
 import type { Live2DModel } from 'pixi-live2d-display-advanced/cubism4';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
+import { applyLive2DMood } from '@/lib/live2d/moodController';
 import { useAvatarStore } from '@/store/avatarStore';
 
 declare global {
@@ -23,21 +24,6 @@ export default function AvatarView() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   moodRef.current = mood;
-
-  const applyMood = useCallback((model: Live2DModel, currentMood: string) => {
-    switch (currentMood) {
-      case 'talking':
-        model.motion('tap_body');
-        model.expression('f01');
-        break;
-      case 'happy':
-        model.expression('f02');
-        break;
-      default:
-        model.motion('idle');
-        break;
-    }
-  }, []);
 
   const updateLayout = useCallback(() => {
     const app = appRef.current;
@@ -103,7 +89,7 @@ export default function AvatarView() {
         app.stage.addChild(model);
         modelRef.current = model;
         updateLayout();
-        applyMood(model, moodRef.current);
+        applyLive2DMood(model, moodRef.current);
         setIsLoading(false);
 
         resizeObserverRef.current = new ResizeObserver(() => {
@@ -132,13 +118,13 @@ export default function AvatarView() {
         appRef.current = null;
       }
     };
-  }, [applyMood, updateLayout]);
+  }, [updateLayout]);
 
   useEffect(() => {
     const model = modelRef.current;
     if (!model) return;
-    applyMood(model, mood);
-  }, [mood, applyMood]);
+    applyLive2DMood(model, mood);
+  }, [mood]);
 
   return (
     <div

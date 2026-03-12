@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 
-type Mood = 'idle' | 'happy' | 'sad' | 'angry' | 'talking';
+export type Mood =
+  | 'neutral'
+  | 'happy'
+  | 'sad'
+  | 'angry'
+  | 'surprised'
+  | 'thinking'
+  | 'idle'
+  | 'talking';
 
 interface AvatarState {
   mood: Mood;
