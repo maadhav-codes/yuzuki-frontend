@@ -21,6 +21,7 @@ import { Separator } from '@/components/ui/separator';
 import { useVoice } from '@/hooks/useVoice';
 import { ApiError, api } from '@/lib/api';
 import { parseEmotionAndContent } from '@/lib/chat/emotionParser';
+import type { Mood } from '@/store/avatarStore';
 import { useAvatarStore } from '@/store/avatarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
@@ -51,6 +52,8 @@ function isAuthError(error: unknown): boolean {
 export default function ChatConversation() {
   const HEARTBEAT_MS = 35_000;
   const RECONNECT_CAP_MS = 30_000;
+  const MOOD_DEBOUNCE_MS = 160;
+  const MOOD_IDLE_RESET_MS = 8_000;
 
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -68,6 +71,10 @@ export default function ChatConversation() {
   const reconnectingRef = useRef(false);
   const shouldReconnectRef = useRef(true);
   const spokenRef = useRef(new Set<number>());
+  const pendingMoodRef = useRef<Mood | null>(null);
+  const moodDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moodIdleResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAppliedMoodRef = useRef<Mood | null>(null);
   const connectWebSocketRef = useRef<(activeSessionId: number, isReconnect?: boolean) => void>(
     () => {}
   );
@@ -86,6 +93,7 @@ export default function ChatConversation() {
   } = useVoice();
 
   const { isListening, isSpeaking, mood, setMood } = useAvatarStore();
+  lastAppliedMoodRef.current = mood;
   const user = useUserStore((state) => state.user);
   const { signOut } = useAuthStore();
   const setChatLoading = useLoadingStore((state) => state.setChatLoading);
@@ -141,12 +149,69 @@ export default function ChatConversation() {
   const closeSocket = useCallback(() => {
     stopHeartbeat();
     clearReconnectTimers();
+    if (moodDebounceRef.current) {
+      clearTimeout(moodDebounceRef.current);
+      moodDebounceRef.current = null;
+      pendingMoodRef.current = null;
+    }
+    if (moodIdleResetRef.current) {
+      clearTimeout(moodIdleResetRef.current);
+      moodIdleResetRef.current = null;
+    }
     if (wsRef.current) {
       shouldReconnectRef.current = false;
       wsRef.current.close(1000, 'Client disconnect');
       wsRef.current = null;
     }
   }, [clearReconnectTimers, stopHeartbeat]);
+
+  const scheduleIdleReset = useCallback(() => {
+    if (moodIdleResetRef.current) {
+      clearTimeout(moodIdleResetRef.current);
+    }
+
+    moodIdleResetRef.current = setTimeout(() => {
+      pendingMoodRef.current = null;
+      if (lastAppliedMoodRef.current === 'idle') return;
+      setMood('idle');
+      lastAppliedMoodRef.current = 'idle';
+    }, MOOD_IDLE_RESET_MS);
+  }, [setMood]);
+
+  const queueMoodUpdate = useCallback(
+    (nextMood: Mood) => {
+      if (nextMood === pendingMoodRef.current || nextMood === lastAppliedMoodRef.current) {
+        if (nextMood !== 'idle') {
+          scheduleIdleReset();
+        }
+        return;
+      }
+
+      pendingMoodRef.current = nextMood;
+
+      if (moodDebounceRef.current) {
+        clearTimeout(moodDebounceRef.current);
+      }
+
+      moodDebounceRef.current = setTimeout(() => {
+        const moodToApply = pendingMoodRef.current;
+        pendingMoodRef.current = null;
+        moodDebounceRef.current = null;
+        if (!moodToApply || moodToApply === lastAppliedMoodRef.current) return;
+        setMood(moodToApply);
+        lastAppliedMoodRef.current = moodToApply;
+        if (moodToApply === 'idle') {
+          if (moodIdleResetRef.current) {
+            clearTimeout(moodIdleResetRef.current);
+            moodIdleResetRef.current = null;
+          }
+          return;
+        }
+        scheduleIdleReset();
+      }, MOOD_DEBOUNCE_MS);
+    },
+    [scheduleIdleReset, setMood]
+  );
 
   const handleAuthFailure = useCallback(async () => {
     try {
@@ -180,6 +245,15 @@ export default function ChatConversation() {
   useEffect(() => {
     return () => {
       unmountedRef.current = true;
+      if (moodDebounceRef.current) {
+        clearTimeout(moodDebounceRef.current);
+        moodDebounceRef.current = null;
+        pendingMoodRef.current = null;
+      }
+      if (moodIdleResetRef.current) {
+        clearTimeout(moodIdleResetRef.current);
+        moodIdleResetRef.current = null;
+      }
       closeSocket();
       resetChatState();
       setChatLoading(false);
@@ -341,7 +415,7 @@ export default function ChatConversation() {
               const chunk = payload.content ?? payload.delta ?? payload.message ?? '';
               if (!chunk) return;
               const { mood: parsedMood, content } = parseEmotionAndContent(chunk);
-              setMood(parsedMood);
+              queueMoodUpdate(parsedMood);
               if (!content) return;
 
               setHasFirstChunk(true);
@@ -439,9 +513,9 @@ export default function ChatConversation() {
       setIsReplying,
       setMessages,
       setReconnectInSec,
-      setMood,
       setWsState,
       stopHeartbeat,
+      queueMoodUpdate,
       user?.id,
     ]
   );
