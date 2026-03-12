@@ -87,7 +87,7 @@ export default function ChatPageShell() {
         </div>
       </header>
 
-      <div className='mx-auto h-[calc(100vh-4rem)] w-full max-w-7xl overflow-hidden px-4 py-2 md:px-6'>
+      <div className='mx-auto h-[calc(100vh-2rem)] w-full max-w-7xl overflow-hidden px-4 py-2 md:px-6'>
         <ChatConversation />
       </div>
     </main>

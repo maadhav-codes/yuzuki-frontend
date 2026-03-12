@@ -614,7 +614,7 @@ export default function ChatConversation() {
             </p>
 
             <ScrollArea
-              className='flex-1 space-y-2 rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'
+              className='min-h-0 flex-1 space-y-2 rounded-xl border border-slate-700/80 bg-linear-to-b from-slate-900/75 to-slate-950/75 p-3.5 shadow-inner shadow-black/30'
               ref={messagesContainerRef}
             >
               {messages.length === 0 && !loadingMessages ? (
@@ -713,7 +713,7 @@ export default function ChatConversation() {
               </div>
             ) : null}
           </CardContent>
-          <CardFooter className='border-t border-slate-700/80 bg-slate-900/50 pt-4'>
+          <CardFooter className='shrink-0 border-t border-slate-700/80 bg-slate-900/50 pt-4'>
             <div className='flex w-full flex-wrap items-center gap-2 rounded-2xl border border-slate-700/70 bg-slate-950/70 p-2 shadow-lg shadow-black/25'>
               <Input
                 className='h-12 flex-1 border-slate-700/70 bg-slate-900 text-slate-100 placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-cyan-400/80'
