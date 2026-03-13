@@ -56,7 +56,7 @@ export const useVoice = () => {
 
     setHasTTS(ttsSupported);
     setHasSTT(sttSupported);
-    setIsSupported(ttsSupported && sttSupported);
+    setIsSupported(ttsSupported || sttSupported);
 
     if (ttsSupported) {
       const updateVoices = () => {
@@ -67,7 +67,9 @@ export const useVoice = () => {
     }
 
     return () => {
-      window.speechSynthesis.cancel();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       if (recognitionRef.current) recognitionRef.current.abort();
       reset();
     };
@@ -154,7 +156,9 @@ export const useVoice = () => {
       onResultRef.current = onResult;
 
       // Stop any ongoing speech or recognition before starting new STT
-      window.speechSynthesis.cancel();
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
       setError(null);
       setCanRetrySTT(false);
 
@@ -223,7 +227,9 @@ export const useVoice = () => {
 
   // Function to stop all ongoing speech and recognition, and reset avatar state
   const stopAll = useCallback(() => {
-    window.speechSynthesis.cancel();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if (recognitionRef.current) recognitionRef.current.abort();
     reset();
   }, [reset]);
