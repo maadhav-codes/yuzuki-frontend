@@ -19,16 +19,14 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useVoice } from '@/hooks/useVoice';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { ApiError, api } from '@/lib/api';
-import { parseEmotionAndContent } from '@/lib/chat/emotionParser';
 import type { Mood } from '@/store/avatarStore';
 import { useAvatarStore } from '@/store/avatarStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useChatStore } from '@/store/useChatStore';
 import { useLoadingStore } from '@/store/useLoadingStore';
 import { useUserStore } from '@/store/useUserStore';
-import type { MessageRead } from '@/types/api';
-import { supabase } from '@/utils/supabase/client';
 
 const AvatarView = dynamic(() => import('@/components/AvatarView'), {
   loading: () => (
@@ -49,42 +47,18 @@ function isAuthError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-interface PendingOutgoingMessage {
-  content: string;
-  optimisticId: number;
-  payload: string;
-  timestamp: string;
-}
-
 export default function ChatConversation() {
-  const HEARTBEAT_MS = 35_000;
-  const RECONNECT_CAP_MS = 30_000;
   const MOOD_DEBOUNCE_MS = 160;
   const MOOD_IDLE_RESET_MS = 8_000;
 
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectAttemptRef = useRef(0);
-  const wasOpenedRef = useRef(false);
-  const assistantMessageIdRef = useRef<number | null>(null);
-  const unsentQueueRef = useRef<PendingOutgoingMessage[]>([]);
-  const localIdRef = useRef(-1);
-  const unmountedRef = useRef(false);
-  const reconnectingRef = useRef(false);
-  const shouldReconnectRef = useRef(true);
   const spokenRef = useRef(new Set<number>());
   const pendingMoodRef = useRef<Mood | null>(null);
   const moodDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moodIdleResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAppliedMoodRef = useRef<Mood | null>(null);
-  const connectWebSocketRef = useRef<(activeSessionId: number, isReconnect?: boolean) => void>(
-    () => {}
-  );
 
   const {
     canRetrySTT,
@@ -110,56 +84,15 @@ export default function ChatConversation() {
     isReplying,
     loadingMessages,
     messages,
-    decrementReconnectInSec,
     reconnectInSec,
     resetChatState,
     sessionId,
-    setChatError,
-    setHasFirstChunk,
-    setIsReplying,
     setLoadingMessages,
     setMessages,
-    setReconnectInSec,
     setSessionId,
-    setWsState,
     wsState,
   } = useChatStore();
   const router = useRouter();
-
-  const reconcileFetchedMessages = useCallback(
-    (serverMessages: MessageRead[]) => {
-      if (unsentQueueRef.current.length === 0) {
-        return serverMessages;
-      }
-
-      const pendingMessages = unsentQueueRef.current.filter((pending) => {
-        return !serverMessages.some(
-          (message) =>
-            message.is_user &&
-            message.content === pending.content &&
-            new Date(message.timestamp).getTime() >= new Date(pending.timestamp).getTime() - 1_000
-        );
-      });
-
-      unsentQueueRef.current = pendingMessages;
-
-      if (pendingMessages.length === 0) {
-        return serverMessages;
-      }
-
-      const optimisticMessages: MessageRead[] = pendingMessages.map((pending) => ({
-        chat_session_id: sessionId ?? 0,
-        content: pending.content,
-        id: pending.optimisticId,
-        is_user: true,
-        owner_id: user?.id ?? '',
-        timestamp: pending.timestamp,
-      }));
-
-      return [...serverMessages, ...optimisticMessages];
-    },
-    [sessionId, user?.id]
-  );
 
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
@@ -168,44 +101,6 @@ export default function ChatConversation() {
       void speakWithFallback(lastMsg.content);
     }
   }, [messages, speakWithFallback, hasTTS]);
-
-  const clearReconnectTimers = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (reconnectCountdownRef.current) {
-      clearInterval(reconnectCountdownRef.current);
-      reconnectCountdownRef.current = null;
-    }
-    setReconnectInSec(null);
-  }, [setReconnectInSec]);
-
-  const stopHeartbeat = useCallback(() => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
-    }
-  }, []);
-
-  const closeSocket = useCallback(() => {
-    stopHeartbeat();
-    clearReconnectTimers();
-    if (moodDebounceRef.current) {
-      clearTimeout(moodDebounceRef.current);
-      moodDebounceRef.current = null;
-      pendingMoodRef.current = null;
-    }
-    if (moodIdleResetRef.current) {
-      clearTimeout(moodIdleResetRef.current);
-      moodIdleResetRef.current = null;
-    }
-    if (wsRef.current) {
-      shouldReconnectRef.current = false;
-      wsRef.current.close(1000, 'Client disconnect');
-      wsRef.current = null;
-    }
-  }, [clearReconnectTimers, stopHeartbeat]);
 
   const scheduleIdleReset = useCallback(() => {
     if (moodIdleResetRef.current) {
@@ -293,6 +188,15 @@ export default function ChatConversation() {
     }
   }, [router, signOut]);
 
+  const { closeSocket, reconcileFetchedMessages, sendMessage, stopGeneration } = useWebSocket({
+    applyImmediateMood,
+    onAuthFailure: handleAuthFailure,
+    queueMoodUpdate,
+    scheduleIdleReset,
+    sessionId,
+    userId: user?.id,
+  });
+
   const fetchMessages = useCallback(async () => {
     if (!user || sessionId === null) return;
     try {
@@ -322,7 +226,6 @@ export default function ChatConversation() {
 
   useEffect(() => {
     return () => {
-      unmountedRef.current = true;
       if (moodDebounceRef.current) {
         clearTimeout(moodDebounceRef.current);
         moodDebounceRef.current = null;
@@ -380,239 +283,6 @@ export default function ChatConversation() {
     }
   }, [sessionId, fetchMessages]);
 
-  const getWebSocketUrl = useCallback(async (activeSessionId: number) => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) {
-      throw new ApiError('Not authenticated', 401);
-    }
-
-    const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const wsBase = backend?.trim().length
-      ? backend
-          .replace(/^http:/i, 'ws:')
-          .replace(/^https:/i, 'wss:')
-          .replace(/\/+$/, '')
-      : `${window.location.origin.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')}/backend`;
-    const url = new URL(`${wsBase}/ws/chat`);
-    url.searchParams.set('conversation_id', String(activeSessionId));
-    url.searchParams.set('token', token);
-    return url.toString();
-  }, []);
-
-  const scheduleReconnect = useCallback(
-    (activeSessionId: number) => {
-      if (unmountedRef.current) return;
-
-      const attempt = reconnectAttemptRef.current;
-      const baseDelay = Math.min(2 ** attempt * 1000, RECONNECT_CAP_MS);
-      const jitterMs = Math.floor(Math.random() * 1000);
-      const totalDelay = baseDelay + jitterMs;
-      reconnectAttemptRef.current += 1;
-      reconnectingRef.current = true;
-      setWsState('reconnecting');
-      setReconnectInSec(Math.ceil(totalDelay / 1000));
-
-      clearReconnectTimers();
-      reconnectCountdownRef.current = setInterval(() => {
-        decrementReconnectInSec();
-      }, 1000);
-
-      reconnectTimeoutRef.current = setTimeout(() => {
-        clearReconnectTimers();
-        connectWebSocketRef.current(activeSessionId, true);
-      }, totalDelay);
-    },
-    [clearReconnectTimers, decrementReconnectInSec, setReconnectInSec, setWsState]
-  );
-
-  const connectWebSocket = useCallback(
-    async (activeSessionId: number, isReconnect = false) => {
-      if (unmountedRef.current) return;
-
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        return;
-      }
-
-      if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
-        return;
-      }
-
-      setWsState(isReconnect ? 'reconnecting' : 'connecting');
-
-      try {
-        const wsUrl = await getWebSocketUrl(activeSessionId);
-        const ws = new WebSocket(wsUrl);
-        shouldReconnectRef.current = true;
-        wsRef.current = ws;
-
-        ws.onopen = async () => {
-          wasOpenedRef.current = true;
-          reconnectAttemptRef.current = 0;
-          reconnectingRef.current = false;
-          clearReconnectTimers();
-          setWsState('open');
-          setChatError(null);
-          setReconnectInSec(null);
-
-          stopHeartbeat();
-          heartbeatRef.current = setInterval(() => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(JSON.stringify({ type: 'ping' }));
-            }
-          }, HEARTBEAT_MS);
-
-          if (unsentQueueRef.current.length > 0) {
-            const queued = [...unsentQueueRef.current];
-            for (const queuedMessage of queued) {
-              ws.send(queuedMessage.payload);
-            }
-          }
-
-          if (isReconnect) {
-            await fetchMessages();
-          }
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data) as {
-              type?: string;
-              content?: string;
-              delta?: string;
-              message?: string;
-              error?: string;
-              message_id?: number;
-            };
-            const type = payload.type ?? '';
-
-            if (type === 'chunk') {
-              const chunk = payload.content ?? payload.delta ?? payload.message ?? '';
-              if (!chunk) return;
-              const { mood: parsedMood, content } = parseEmotionAndContent(chunk);
-              queueMoodUpdate(parsedMood);
-              if (!content) return;
-
-              setHasFirstChunk(true);
-              setIsReplying(true);
-
-              setMessages((prev) => {
-                const assistantId = assistantMessageIdRef.current;
-                if (assistantId === null) {
-                  const createdId = localIdRef.current;
-                  localIdRef.current -= 1;
-                  assistantMessageIdRef.current = createdId;
-                  return [
-                    ...prev,
-                    {
-                      chat_session_id: activeSessionId,
-                      content,
-                      id: createdId,
-                      is_user: false,
-                      owner_id: user?.id ?? '',
-                      timestamp: new Date().toISOString(),
-                    },
-                  ];
-                }
-
-                return prev.map((msg) =>
-                  msg.id === assistantId ? { ...msg, content: `${msg.content}${content}` } : msg
-                );
-              });
-              return;
-            }
-
-            if (type === 'done' || type === 'complete') {
-              const realId = payload.message_id;
-              if (realId && assistantMessageIdRef.current !== null) {
-                setMessages((prev) =>
-                  prev.map((msg) =>
-                    msg.id === assistantMessageIdRef.current ? { ...msg, id: realId } : msg
-                  )
-                );
-              }
-              assistantMessageIdRef.current = null;
-              setIsReplying(false);
-              setHasFirstChunk(false);
-              scheduleIdleReset();
-              return;
-            }
-
-            if (type === 'cancelled') {
-              assistantMessageIdRef.current = null;
-              setIsReplying(false);
-              setHasFirstChunk(false);
-              applyImmediateMood('idle');
-              return;
-            }
-
-            if (type === 'error') {
-              assistantMessageIdRef.current = null;
-              setIsReplying(false);
-              setHasFirstChunk(false);
-              setChatError(payload.error || payload.message || 'Failed to generate response.');
-              applyImmediateMood('idle');
-            }
-          } catch {
-            setChatError('Received an invalid chat stream event.');
-          }
-        };
-
-        ws.onerror = () => {
-          setChatError('Connection issue detected. Attempting to reconnect.');
-        };
-
-        ws.onclose = () => {
-          wsRef.current = null;
-          stopHeartbeat();
-          setWsState('closed');
-
-          if (!unmountedRef.current && shouldReconnectRef.current) {
-            scheduleReconnect(activeSessionId);
-          }
-        };
-      } catch (err) {
-        if (isAuthError(err)) {
-          await handleAuthFailure();
-          return;
-        }
-        setChatError('Could not open chat connection. Retrying.');
-        scheduleReconnect(activeSessionId);
-      }
-    },
-    [
-      clearReconnectTimers,
-      fetchMessages,
-      getWebSocketUrl,
-      handleAuthFailure,
-      applyImmediateMood,
-      scheduleReconnect,
-      scheduleIdleReset,
-      setChatError,
-      setHasFirstChunk,
-      setIsReplying,
-      setMessages,
-      setReconnectInSec,
-      setWsState,
-      stopHeartbeat,
-      queueMoodUpdate,
-      user?.id,
-    ]
-  );
-
-  useEffect(() => {
-    connectWebSocketRef.current = (activeSessionId, isReconnect) => {
-      void connectWebSocket(activeSessionId, isReconnect);
-    };
-  }, [connectWebSocket]);
-
-  useEffect(() => {
-    if (sessionId === null || !user) return;
-    void connectWebSocket(sessionId, reconnectingRef.current);
-  }, [sessionId, user, connectWebSocket]);
-
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -638,48 +308,11 @@ export default function ChatConversation() {
 
   const canSend = input.trim().length > 0 && !isReplying && wsState === 'open';
 
-  const handleSend = async (msg?: string) => {
+  const handleSend = (msg?: string) => {
     const messageToSend = msg || input.trim();
-    if (!messageToSend || isReplying || sessionId === null) return;
-
-    const optimisticId = localIdRef.current;
-    const timestamp = new Date().toISOString();
-    const payload = JSON.stringify({
-      message: messageToSend,
-      type: 'message',
-    });
-
-    const userMessage: MessageRead = {
-      chat_session_id: sessionId,
-      content: messageToSend,
-      id: optimisticId,
-      is_user: true,
-      owner_id: user?.id ?? '',
-      timestamp,
-    };
-    localIdRef.current -= 1;
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-    setIsReplying(true);
-    setHasFirstChunk(false);
-    setChatError(null);
-    applyImmediateMood('thinking');
-    assistantMessageIdRef.current = null;
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(payload);
-      return;
-    }
-
-    unsentQueueRef.current.push({
-      content: messageToSend,
-      optimisticId,
-      payload,
-      timestamp,
-    });
-    if (sessionId !== null) {
-      void connectWebSocket(sessionId, true);
+    if (!messageToSend || isReplying) return;
+    if (sendMessage(messageToSend)) {
+      setInput('');
     }
   };
 
@@ -711,12 +344,7 @@ export default function ChatConversation() {
     });
   };
 
-  const handleStopGeneration = () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'cancel' }));
-      // UI will be updated when backend replies with 'cancelled'
-    }
-  };
+  const handleStopGeneration = () => stopGeneration();
 
   const connectionHint =
     wsState === 'reconnecting'
