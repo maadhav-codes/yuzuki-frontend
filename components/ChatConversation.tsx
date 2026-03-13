@@ -49,6 +49,13 @@ function isAuthError(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
+interface PendingOutgoingMessage {
+  content: string;
+  optimisticId: number;
+  payload: string;
+  timestamp: string;
+}
+
 export default function ChatConversation() {
   const HEARTBEAT_MS = 35_000;
   const RECONNECT_CAP_MS = 30_000;
@@ -65,7 +72,7 @@ export default function ChatConversation() {
   const reconnectAttemptRef = useRef(0);
   const wasOpenedRef = useRef(false);
   const assistantMessageIdRef = useRef<number | null>(null);
-  const unsentQueueRef = useRef<string[]>([]);
+  const unsentQueueRef = useRef<PendingOutgoingMessage[]>([]);
   const localIdRef = useRef(-1);
   const unmountedRef = useRef(false);
   const reconnectingRef = useRef(false);
@@ -118,6 +125,41 @@ export default function ChatConversation() {
     wsState,
   } = useChatStore();
   const router = useRouter();
+
+  const reconcileFetchedMessages = useCallback(
+    (serverMessages: MessageRead[]) => {
+      if (unsentQueueRef.current.length === 0) {
+        return serverMessages;
+      }
+
+      const pendingMessages = unsentQueueRef.current.filter((pending) => {
+        return !serverMessages.some(
+          (message) =>
+            message.is_user &&
+            message.content === pending.content &&
+            new Date(message.timestamp).getTime() >= new Date(pending.timestamp).getTime() - 1_000
+        );
+      });
+
+      unsentQueueRef.current = pendingMessages;
+
+      if (pendingMessages.length === 0) {
+        return serverMessages;
+      }
+
+      const optimisticMessages: MessageRead[] = pendingMessages.map((pending) => ({
+        chat_session_id: sessionId ?? 0,
+        content: pending.content,
+        id: pending.optimisticId,
+        is_user: true,
+        owner_id: user?.id ?? '',
+        timestamp: pending.timestamp,
+      }));
+
+      return [...serverMessages, ...optimisticMessages];
+    },
+    [sessionId, user?.id]
+  );
 
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
@@ -229,7 +271,7 @@ export default function ChatConversation() {
       setLoadingMessages(true);
       setChatLoading(true);
       const data = await api.getMessages(sessionId, 10);
-      setMessages(data);
+      setMessages(reconcileFetchedMessages(data));
     } catch (err) {
       if (isAuthError(err)) {
         await handleAuthFailure();
@@ -240,7 +282,15 @@ export default function ChatConversation() {
       setLoadingMessages(false);
       setChatLoading(false);
     }
-  }, [user, sessionId, handleAuthFailure, setLoadingMessages, setChatLoading, setMessages]);
+  }, [
+    user,
+    sessionId,
+    handleAuthFailure,
+    reconcileFetchedMessages,
+    setLoadingMessages,
+    setChatLoading,
+    setMessages,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -388,9 +438,8 @@ export default function ChatConversation() {
 
           if (unsentQueueRef.current.length > 0) {
             const queued = [...unsentQueueRef.current];
-            unsentQueueRef.current = [];
-            for (const payload of queued) {
-              ws.send(payload);
+            for (const queuedMessage of queued) {
+              ws.send(queuedMessage.payload);
             }
           }
 
@@ -560,6 +609,8 @@ export default function ChatConversation() {
     const messageToSend = msg || input.trim();
     if (!messageToSend || isReplying || sessionId === null) return;
 
+    const optimisticId = localIdRef.current;
+    const timestamp = new Date().toISOString();
     const payload = JSON.stringify({
       message: messageToSend,
       type: 'message',
@@ -568,10 +619,10 @@ export default function ChatConversation() {
     const userMessage: MessageRead = {
       chat_session_id: sessionId,
       content: messageToSend,
-      id: localIdRef.current,
+      id: optimisticId,
       is_user: true,
       owner_id: user?.id ?? '',
-      timestamp: new Date().toISOString(),
+      timestamp,
     };
     localIdRef.current -= 1;
 
@@ -587,7 +638,12 @@ export default function ChatConversation() {
       return;
     }
 
-    unsentQueueRef.current.push(payload);
+    unsentQueueRef.current.push({
+      content: messageToSend,
+      optimisticId,
+      payload,
+      timestamp,
+    });
     if (sessionId !== null) {
       void connectWebSocket(sessionId, true);
     }
