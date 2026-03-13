@@ -220,6 +220,34 @@ export default function ChatConversation() {
     }, MOOD_IDLE_RESET_MS);
   }, [setMood]);
 
+  const applyImmediateMood = useCallback(
+    (nextMood: Mood) => {
+      if (moodDebounceRef.current) {
+        clearTimeout(moodDebounceRef.current);
+        moodDebounceRef.current = null;
+      }
+
+      pendingMoodRef.current = null;
+
+      if (nextMood === 'idle') {
+        if (moodIdleResetRef.current) {
+          clearTimeout(moodIdleResetRef.current);
+          moodIdleResetRef.current = null;
+        }
+      } else {
+        scheduleIdleReset();
+      }
+
+      if (lastAppliedMoodRef.current === nextMood) {
+        return;
+      }
+
+      setMood(nextMood);
+      lastAppliedMoodRef.current = nextMood;
+    },
+    [scheduleIdleReset, setMood]
+  );
+
   const queueMoodUpdate = useCallback(
     (nextMood: Mood) => {
       if (nextMood === pendingMoodRef.current || nextMood === lastAppliedMoodRef.current) {
@@ -508,6 +536,7 @@ export default function ChatConversation() {
               assistantMessageIdRef.current = null;
               setIsReplying(false);
               setHasFirstChunk(false);
+              scheduleIdleReset();
               return;
             }
 
@@ -515,6 +544,7 @@ export default function ChatConversation() {
               assistantMessageIdRef.current = null;
               setIsReplying(false);
               setHasFirstChunk(false);
+              applyImmediateMood('idle');
               return;
             }
 
@@ -523,6 +553,7 @@ export default function ChatConversation() {
               setIsReplying(false);
               setHasFirstChunk(false);
               setChatError(payload.error || payload.message || 'Failed to generate response.');
+              applyImmediateMood('idle');
             }
           } catch {
             setChatError('Received an invalid chat stream event.');
@@ -556,7 +587,9 @@ export default function ChatConversation() {
       fetchMessages,
       getWebSocketUrl,
       handleAuthFailure,
+      applyImmediateMood,
       scheduleReconnect,
+      scheduleIdleReset,
       setChatError,
       setHasFirstChunk,
       setIsReplying,
@@ -631,6 +664,7 @@ export default function ChatConversation() {
     setIsReplying(true);
     setHasFirstChunk(false);
     setChatError(null);
+    applyImmediateMood('thinking');
     assistantMessageIdRef.current = null;
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
