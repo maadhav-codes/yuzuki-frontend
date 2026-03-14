@@ -77,6 +77,17 @@ export default function ChatConversation({
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
   const [hasCheckedMicPermission, setHasCheckedMicPermission] = useState(false);
   const [hasMicPermissionGranted, setHasMicPermissionGranted] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedPerm = localStorage.getItem('micPermissionGranted');
+      if (savedPerm === 'true') {
+        setHasCheckedMicPermission(true);
+        setHasMicPermissionGranted(true);
+      }
+    }
+  }, []);
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sttBaseInputRef = useRef('');
   const spokenRef = useRef(new Set<number>());
@@ -417,6 +428,7 @@ export default function ChatConversation({
       setMicPermissionError(null);
       setHasCheckedMicPermission(true);
       setHasMicPermissionGranted(true);
+      localStorage.setItem('micPermissionGranted', 'true');
       return true;
     } catch {
       setMicPermissionError(
@@ -428,7 +440,7 @@ export default function ChatConversation({
     }
   }, [hasCheckedMicPermission, hasMicPermissionGranted]);
 
-  const handleMicClick = async () => {
+  const handleMicClick = useCallback(async () => {
     if (!sttEnabled) return;
     if (isListening) {
       stopAll();
@@ -447,7 +459,14 @@ export default function ChatConversation({
       return;
     }
     startMicCapture();
-  };
+  }, [
+    sttEnabled,
+    isListening,
+    stopAll,
+    hasCheckedMicPermission,
+    hasMicPermissionGranted,
+    startMicCapture,
+  ]);
 
   const handleConfirmMicPerm = async () => {
     setShowPermDialog(false);
@@ -456,6 +475,19 @@ export default function ChatConversation({
       startMicCapture();
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        if (sttEnabled && hasSTT) {
+          void handleMicClick();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sttEnabled, hasSTT, handleMicClick]);
 
   const connectionHint =
     wsState === 'reconnecting'

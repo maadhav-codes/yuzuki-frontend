@@ -97,14 +97,19 @@ export const useVoice = () => {
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
   // Function to select the best available voice for TTS
-  const getBestVoice = useCallback((): SpeechSynthesisVoice | undefined => {
-    const voices = window.speechSynthesis.getVoices();
-    return (
-      voices.find((v) => v.lang.includes('en-US') && v.name.includes('Google')) ||
-      voices.find((v) => v.lang.includes('en-US')) ||
-      voices[0]
-    );
-  }, []);
+  const getBestVoice = useCallback(
+    (lang = navigator.language || 'en-US'): SpeechSynthesisVoice | undefined => {
+      const voices = window.speechSynthesis.getVoices();
+      return (
+        voices.find((v) => v.lang === lang) ||
+        voices.find((v) => v.lang.startsWith(lang.split('-')[0])) ||
+        voices.find((v) => v.lang.includes('en-US') && v.name.includes('Google')) ||
+        voices.find((v) => v.lang.includes('en-US')) ||
+        voices[0]
+      );
+    },
+    []
+  );
 
   const pauseTTS = useCallback(() => {
     if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
@@ -126,7 +131,7 @@ export const useVoice = () => {
 
   // Text-to-Speech function
   const speak = useCallback(
-    (text: string, pitch = 1.0, rate = 1.0, volume = 1.0) => {
+    (text: string, pitch = 1.0, rate = 1.0, volume = 1.0, lang = navigator.language || 'en-US') => {
       if (!hasTTS) return;
 
       // Stop any ongoing speech or recognition before starting new TTS
@@ -155,7 +160,7 @@ export const useVoice = () => {
         chunks = [text];
       }
 
-      const voice = getBestVoice();
+      const voice = getBestVoice(lang);
 
       chunks.forEach((chunk, index) => {
         const utterance = new SpeechSynthesisUtterance(chunk);
@@ -204,11 +209,17 @@ export const useVoice = () => {
   );
 
   const speakWithFallback = useCallback(
-    async (text: string, pitch = 1.0, rate = 1.0, volume = 1.0) => {
+    async (
+      text: string,
+      pitch = 1.0,
+      rate = 1.0,
+      volume = 1.0,
+      lang = navigator.language || 'en-US'
+    ) => {
       if (!hasTTS) return;
 
       if (hasUsableTTSVoice) {
-        speak(text, pitch, rate, volume);
+        speak(text, pitch, rate, volume, lang);
         return;
       }
 
@@ -240,13 +251,16 @@ export const useVoice = () => {
         console.warn('Backend TTS fallback failed, using client TTS', err);
       }
 
-      speak(text, pitch, rate, volume);
+      speak(text, pitch, rate, volume, lang);
     },
     [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood]
   );
 
   const startListening = useCallback(
-    (onResult: (transcript: string, isFinal: boolean) => void) => {
+    (
+      onResult: (transcript: string, isFinal: boolean) => void,
+      lang = navigator.language || 'en-US'
+    ) => {
       if (!hasSTT) return;
       onResultRef.current = onResult;
       shouldContinueListeningRef.current = true;
@@ -277,7 +291,7 @@ export const useVoice = () => {
 
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      recognition.lang = lang;
 
       const armInactivityTimeout = () => {
         if (inactivityTimerRef.current) {
