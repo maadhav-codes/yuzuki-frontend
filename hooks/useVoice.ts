@@ -94,6 +94,8 @@ export const useVoice = () => {
     };
   }, [reset]);
 
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+
   // Function to select the best available voice for TTS
   const getBestVoice = useCallback((): SpeechSynthesisVoice | undefined => {
     const voices = window.speechSynthesis.getVoices();
@@ -104,44 +106,109 @@ export const useVoice = () => {
     );
   }, []);
 
+  const pauseTTS = useCallback(() => {
+    if ('speechSynthesis' in window && window.speechSynthesis.speaking) {
+      window.speechSynthesis.pause();
+      setIsPaused(true);
+      setIsSpeaking(false);
+      setMood('idle');
+    }
+  }, [setIsSpeaking, setMood]);
+
+  const resumeTTS = useCallback(() => {
+    if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+      setIsPaused(false);
+      setIsSpeaking(true);
+      setMood('talking');
+    }
+  }, [setIsSpeaking, setMood]);
+
   // Text-to-Speech function
   const speak = useCallback(
-    (text: string) => {
+    (text: string, pitch = 1.0, rate = 1.0, volume = 1.0) => {
       if (!hasTTS) return;
 
       // Stop any ongoing speech or recognition before starting new TTS
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      setIsPaused(false);
+
+      // Basic chunking logic for long texts (split by common punctuation)
+      const maxChunkLength = 200;
+      let chunks: string[] = [];
+
+      if (text.length > maxChunkLength) {
+        // Split by sentences roughly
+        const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+        let currentChunk = '';
+
+        for (const sentence of sentences) {
+          if (currentChunk.length + sentence.length <= maxChunkLength) {
+            currentChunk += sentence;
+          } else {
+            if (currentChunk) chunks.push(currentChunk.trim());
+            currentChunk = sentence;
+          }
+        }
+        if (currentChunk) chunks.push(currentChunk.trim());
+      } else {
+        chunks = [text];
+      }
+
       const voice = getBestVoice();
-      if (voice) utterance.voice = voice;
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
 
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        setMood('talking');
-      };
+      chunks.forEach((chunk, index) => {
+        const utterance = new SpeechSynthesisUtterance(chunk);
+        if (voice) utterance.voice = voice;
+        utterance.rate = rate;
+        utterance.pitch = pitch;
+        utterance.volume = volume;
 
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        setMood('idle');
-      };
-      utterance.onerror = () => {
-        setIsSpeaking(false);
-        setMood('idle');
-      };
+        if (index === 0) {
+          utterance.onstart = () => {
+            setIsSpeaking(true);
+            setIsPaused(false);
+            setMood('talking');
+          };
+        }
 
-      window.speechSynthesis.speak(utterance);
+        if (index === chunks.length - 1) {
+          utterance.onend = () => {
+            setIsSpeaking(false);
+            setIsPaused(false);
+            setMood('idle');
+          };
+          utterance.onerror = () => {
+            setIsSpeaking(false);
+            setIsPaused(false);
+            setMood('idle');
+          };
+        }
+
+        utterance.onpause = () => {
+          setIsPaused(true);
+          setIsSpeaking(false);
+          setMood('idle');
+        };
+
+        utterance.onresume = () => {
+          setIsPaused(false);
+          setIsSpeaking(true);
+          setMood('talking');
+        };
+
+        window.speechSynthesis.speak(utterance);
+      });
     },
     [hasTTS, getBestVoice, setIsSpeaking, setMood]
   );
 
   const speakWithFallback = useCallback(
-    async (text: string) => {
+    async (text: string, pitch = 1.0, rate = 1.0, volume = 1.0) => {
       if (!hasTTS) return;
 
       if (hasUsableTTSVoice) {
-        speak(text);
+        speak(text, pitch, rate, volume);
         return;
       }
 
@@ -149,11 +216,20 @@ export const useVoice = () => {
         const data = await api.generateTTS(text);
         if (data.audioUrl) {
           const audio = new Audio(data.audioUrl);
+          audio.volume = volume;
+          // Note: HTML5 Audio doesn't natively support easy pitch shifting without Web Audio API.
+          // Fallback limits to rate change.
+          audio.playbackRate = rate;
+
           audio.onplay = () => {
             setIsSpeaking(true);
             setMood('talking');
           };
           audio.onended = () => {
+            setIsSpeaking(false);
+            setMood('idle');
+          };
+          audio.onerror = () => {
             setIsSpeaking(false);
             setMood('idle');
           };
@@ -164,7 +240,7 @@ export const useVoice = () => {
         console.warn('Backend TTS fallback failed, using client TTS', err);
       }
 
-      speak(text);
+      speak(text, pitch, rate, volume);
     },
     [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood]
   );
@@ -308,6 +384,7 @@ export const useVoice = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    setIsPaused(false);
     setIsSpeaking(false);
   }, [setIsSpeaking]);
 
@@ -341,6 +418,7 @@ export const useVoice = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    setIsPaused(false);
     if (recognitionRef.current) recognitionRef.current.abort();
     reset();
   }, [reset]);
@@ -351,7 +429,10 @@ export const useVoice = () => {
     hasSTT,
     hasTTS,
     hasUsableTTSVoice,
+    isPaused,
     isSupported,
+    pauseTTS,
+    resumeTTS,
     retryListening,
     speakWithFallback,
     startListening,

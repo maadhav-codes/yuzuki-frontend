@@ -15,6 +15,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useVoiceSettings } from '@/hooks/useVoiceSettings';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -39,7 +40,18 @@ export default function ChatPageShell() {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const { sttEnabled, setSttEnabled, ttsEnabled, setTtsEnabled } = useVoiceSettings();
+  const {
+    sttEnabled,
+    setSttEnabled,
+    ttsEnabled,
+    setTtsEnabled,
+    pitch,
+    setPitch,
+    rate,
+    setRate,
+    volume,
+    setVolume,
+  } = useVoiceSettings();
   const [support, setSupport] = useState({ hasSTT: false, hasTTS: false });
 
   useEffect(() => {
@@ -199,6 +211,59 @@ export default function ChatPageShell() {
                           onCheckedChange={setTtsEnabled}
                         />
                       </label>
+
+                      {ttsEnabled && support.hasTTS && (
+                        <div className='mt-3 space-y-4 rounded-xl border border-slate-800/60 bg-slate-900/10 p-4'>
+                          <div className='space-y-2.5'>
+                            <div className='flex items-center justify-between'>
+                              <span className='text-xs font-medium text-slate-300'>Volume</span>
+                              <span className='text-[10px] text-slate-500'>
+                                {Math.round(volume * 100)}%
+                              </span>
+                            </div>
+                            <Slider
+                              className='w-full'
+                              max={1.0}
+                              min={0.0}
+                              onValueChange={(vals: number[]) => setVolume(vals[0])}
+                              step={0.1}
+                              value={[volume]}
+                            />
+                          </div>
+
+                          <div className='space-y-2.5'>
+                            <div className='flex items-center justify-between'>
+                              <span className='text-xs font-medium text-slate-300'>Pitch</span>
+                              <span className='text-[10px] text-slate-500'>
+                                {pitch.toFixed(1)}x
+                              </span>
+                            </div>
+                            <Slider
+                              className='w-full'
+                              max={2.0}
+                              min={0.0}
+                              onValueChange={(vals: number[]) => setPitch(vals[0])}
+                              step={0.1}
+                              value={[pitch]}
+                            />
+                          </div>
+
+                          <div className='space-y-2.5'>
+                            <div className='flex items-center justify-between'>
+                              <span className='text-xs font-medium text-slate-300'>Speed</span>
+                              <span className='text-[10px] text-slate-500'>{rate.toFixed(1)}x</span>
+                            </div>
+                            <Slider
+                              className='w-full'
+                              max={2.0}
+                              min={0.5}
+                              onValueChange={(vals: number[]) => setRate(vals[0])}
+                              step={0.1}
+                              value={[rate]}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

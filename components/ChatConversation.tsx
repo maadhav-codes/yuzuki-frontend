@@ -1,6 +1,13 @@
 'use client';
 
-import { IconMicrophone, IconPlayerStopFilled, IconSend2, IconVolume2 } from '@tabler/icons-react';
+import {
+  IconMicrophone,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+  IconPlayerStopFilled,
+  IconSend2,
+  IconVolume2,
+} from '@tabler/icons-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -50,9 +57,18 @@ function isAuthError(error: unknown): boolean {
 interface ChatConversationProps {
   sttEnabled: boolean;
   ttsEnabled: boolean;
+  pitch?: number;
+  rate?: number;
+  volume?: number;
 }
 
-export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConversationProps) {
+export default function ChatConversation({
+  sttEnabled,
+  ttsEnabled,
+  pitch = 1.0,
+  rate = 1.0,
+  volume = 1.0,
+}: ChatConversationProps) {
   const MOOD_DEBOUNCE_MS = 160;
   const MOOD_IDLE_RESET_MS = 8_000;
 
@@ -71,13 +87,19 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
   const [showPermDialog, setShowPermDialog] = useState(false);
 
+  // Keep track of the message ID currently being spoken
+  const [activeSpeechMessageId, setActiveSpeechMessageId] = useState<number | null>(null);
+
   const {
     canRetrySTT,
     error,
     hasSTT,
     hasTTS,
     hasUsableTTSVoice,
+    isPaused,
     isSupported,
+    pauseTTS,
+    resumeTTS,
     retryListening,
     speakWithFallback,
     startListening,
@@ -107,13 +129,21 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
   } = useChatStore();
   const router = useRouter();
 
+  // Reset active speech message ID when avatar stops speaking
+  useEffect(() => {
+    if (!isSpeaking && !isPaused) {
+      setActiveSpeechMessageId(null);
+    }
+  }, [isSpeaking, isPaused]);
+
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
     if (lastMsg && !lastMsg.is_user && !spokenRef.current.has(lastMsg.id) && hasTTS && ttsEnabled) {
       spokenRef.current.add(lastMsg.id);
-      void speakWithFallback(lastMsg.content);
+      setActiveSpeechMessageId(lastMsg.id);
+      void speakWithFallback(lastMsg.content, pitch, rate, volume);
     }
-  }, [messages, speakWithFallback, hasTTS, ttsEnabled]);
+  }, [messages, speakWithFallback, hasTTS, ttsEnabled, pitch, rate, volume]);
 
   useEffect(() => {
     if (!sttEnabled) stopSTT();
@@ -536,15 +566,54 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
                         {!msg.is_user && hasTTS && (
                           <Button
-                            aria-label={!ttsEnabled ? 'Play message (TTS disabled)' : 'Play message'}
-                            className='absolute -bottom-3 -right-3 h-7 w-7 rounded-full border border-slate-700 bg-slate-900 text-slate-400 opacity-0 shadow-sm transition-all hover:bg-slate-800 hover:text-cyan-400 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50'
+                            aria-label={
+                              !ttsEnabled
+                                ? 'Play message (TTS disabled)'
+                                : activeSpeechMessageId === msg.id && isSpeaking
+                                  ? 'Pause playback'
+                                  : activeSpeechMessageId === msg.id && isPaused
+                                    ? 'Resume playback'
+                                    : 'Play message'
+                            }
+                            className={`absolute -bottom-3 -right-3 h-7 w-7 rounded-full border border-slate-700 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                              activeSpeechMessageId === msg.id && (isSpeaking || isPaused)
+                                ? 'bg-cyan-600 text-white hover:bg-cyan-500 opacity-100'
+                                : 'bg-slate-900 text-slate-400 opacity-0 hover:bg-slate-800 hover:text-cyan-400 group-hover:opacity-100'
+                            }`}
                             disabled={!ttsEnabled}
-                            onClick={() => speakWithFallback(msg.content)}
+                            onClick={() => {
+                              if (activeSpeechMessageId === msg.id) {
+                                if (isSpeaking) {
+                                  pauseTTS();
+                                } else if (isPaused) {
+                                  resumeTTS();
+                                } else {
+                                  void speakWithFallback(msg.content, pitch, rate, volume);
+                                }
+                              } else {
+                                setActiveSpeechMessageId(msg.id);
+                                void speakWithFallback(msg.content, pitch, rate, volume);
+                              }
+                            }}
                             size='icon'
-                            title={!ttsEnabled ? 'TTS disabled' : 'Play message'}
+                            title={
+                              !ttsEnabled
+                                ? 'TTS disabled'
+                                : activeSpeechMessageId === msg.id && isSpeaking
+                                  ? 'Pause playback'
+                                  : activeSpeechMessageId === msg.id && isPaused
+                                    ? 'Resume playback'
+                                    : 'Play message'
+                            }
                             variant='outline'
                           >
-                            <IconVolume2 className='h-3.5 w-3.5' />
+                            {activeSpeechMessageId === msg.id && isSpeaking ? (
+                              <IconPlayerPauseFilled className='h-3.5 w-3.5' />
+                            ) : activeSpeechMessageId === msg.id && isPaused ? (
+                              <IconPlayerPlayFilled className='h-3.5 w-3.5' />
+                            ) : (
+                              <IconVolume2 className='h-3.5 w-3.5' />
+                            )}
                           </Button>
                         )}
 
