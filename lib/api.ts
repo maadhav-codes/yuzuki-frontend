@@ -20,7 +20,7 @@ async function getAuthHeader(): Promise<string | null> {
   return session?.access_token || null;
 }
 
-async function authFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
+async function authFetch<T>(url: string, options: RequestInit = {}, retries = 1): Promise<T> {
   const token = await getAuthHeader();
   if (!token) throw new ApiError('Not authenticated', 401);
 
@@ -31,6 +31,17 @@ async function authFetch<T>(url: string, options: RequestInit = {}): Promise<T> 
   };
 
   const response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401 && retries > 0) {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.refreshSession();
+    if (error || !session) {
+      throw new ApiError('Session expired', 401);
+    }
+    return authFetch<T>(url, options, retries - 1);
+  }
 
   if (!response.ok) {
     const parsedBody = await response.json().catch(() => null);
@@ -67,15 +78,14 @@ export const api = {
   generateTTS: async (
     text: string
   ): Promise<{ success: boolean; audioUrl: string | null; note: string }> => {
-    const res = await fetch(`${API_BASE}/voice/tts`, {
+    return authFetch<{
+      success: boolean;
+      audioUrl: string | null;
+      note: string;
+    }>(`${API_BASE}/voice/tts`, {
       body: JSON.stringify({ text }),
-      headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
-    if (!res.ok) {
-      throw new Error(`TTS request failed with status: ${res.status}`);
-    }
-    return res.json();
   },
 
   getCurrentSession: async (): Promise<SessionRead> => {

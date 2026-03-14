@@ -17,6 +17,27 @@ interface AuthState {
   initialize: () => () => void;
 }
 
+let refreshTimer: NodeJS.Timeout | null = null;
+
+const startRefreshTimer = () => {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(
+    async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        await supabase.auth.refreshSession();
+      }
+    },
+    30 * 60 * 1000
+  ); // Check every 30 minutes
+};
+
+const stopRefreshTimer = () => {
+  if (refreshTimer) clearInterval(refreshTimer);
+};
+
 export const useAuthStore = create<AuthState>((set, _) => ({
   initialize: () => {
     supabase.auth
@@ -42,6 +63,11 @@ export const useAuthStore = create<AuthState>((set, _) => ({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        startRefreshTimer();
+      } else {
+        stopRefreshTimer();
+      }
       useLoadingStore.getState().setAuthLoading(false);
       useUserStore.getState().setUser(session?.user ?? null);
       set({ loading: false, session, user: session?.user ?? null });
