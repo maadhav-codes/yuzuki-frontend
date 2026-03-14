@@ -536,6 +536,7 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
                         {!msg.is_user && hasTTS && (
                           <Button
+                            aria-label={!ttsEnabled ? 'Play message (TTS disabled)' : 'Play message'}
                             className='absolute -bottom-3 -right-3 h-7 w-7 rounded-full border border-slate-700 bg-slate-900 text-slate-400 opacity-0 shadow-sm transition-all hover:bg-slate-800 hover:text-cyan-400 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50'
                             disabled={!ttsEnabled}
                             onClick={() => speakWithFallback(msg.content)}
@@ -595,6 +596,7 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
             {isReplying ? (
               <Button
+                aria-label='Stop generation'
                 className='h-9 w-9 shrink-0 rounded-full bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 hover:text-rose-300'
                 onClick={() => stopGeneration()}
                 size='icon'
@@ -604,6 +606,7 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
               </Button>
             ) : (
               <Button
+                aria-label='Send message'
                 className='h-9 w-9 shrink-0 rounded-full bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50'
                 disabled={!canSend}
                 onClick={() => handleSend()}
@@ -616,6 +619,7 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
             <div className='mx-1 h-6 w-px bg-slate-700/60' />
 
             <Button
+              aria-label={isListening ? 'Stop recording' : 'Start recording'}
               className={`h-9 w-9 shrink-0 rounded-full transition-colors ${
                 isListening
                   ? 'bg-rose-500 text-white hover:bg-rose-400'
