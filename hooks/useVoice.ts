@@ -77,6 +77,7 @@ export const useVoice = () => {
 
     return () => {
       if ('speechSynthesis' in window) {
+        window.speechSynthesis.onvoiceschanged = null;
         window.speechSynthesis.cancel();
       }
       shouldContinueListeningRef.current = false;
