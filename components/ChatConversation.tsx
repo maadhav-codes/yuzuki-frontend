@@ -82,6 +82,8 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
     speakWithFallback,
     startListening,
     stopAll,
+    stopSTT,
+    stopTTS,
   } = useVoice();
 
   const { isListening, isSpeaking, mood, setMood } = useAvatarStore();
@@ -114,8 +116,9 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
   }, [messages, speakWithFallback, hasTTS, ttsEnabled]);
 
   useEffect(() => {
-    if (!sttEnabled || !ttsEnabled) stopAll();
-  }, [sttEnabled, ttsEnabled, stopAll]);
+    if (!sttEnabled) stopSTT();
+    if (!ttsEnabled) stopTTS();
+  }, [sttEnabled, ttsEnabled, stopSTT, stopTTS]);
 
   useEffect(() => {
     if (!hasSTT) {

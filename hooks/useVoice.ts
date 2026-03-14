@@ -303,6 +303,28 @@ export const useVoice = () => {
     if (onResultRef.current) startListening(onResultRef.current);
   }, [startListening]);
 
+  const stopTTS = useCallback(() => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  }, [setIsSpeaking]);
+
+  const stopSTT = useCallback(() => {
+    shouldContinueListeningRef.current = false;
+    lastInterimRef.current = '';
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+    if (recognitionRef.current) recognitionRef.current.abort();
+    setIsListening(false);
+  }, [setIsListening]);
+
   // Function to stop all ongoing speech and recognition, and reset avatar state
   const stopAll = useCallback(() => {
     shouldContinueListeningRef.current = false;
@@ -333,5 +355,7 @@ export const useVoice = () => {
     speakWithFallback,
     startListening,
     stopAll,
+    stopSTT,
+    stopTTS,
   };
 };
