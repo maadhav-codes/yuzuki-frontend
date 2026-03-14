@@ -58,7 +58,11 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
   const [input, setInput] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
+  const [hasCheckedMicPermission, setHasCheckedMicPermission] = useState(false);
+  const [hasMicPermissionGranted, setHasMicPermissionGranted] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const sttBaseInputRef = useRef('');
   const spokenRef = useRef(new Set<number>());
   const pendingMoodRef = useRef<Mood | null>(null);
   const moodDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,6 +116,12 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
   useEffect(() => {
     if (!sttEnabled || !ttsEnabled) stopAll();
   }, [sttEnabled, ttsEnabled, stopAll]);
+
+  useEffect(() => {
+    if (!hasSTT) {
+      console.warn('Speech-to-Text is unsupported in this browser.');
+    }
+  }, [hasSTT]);
 
   const scheduleIdleReset = useCallback(() => {
     if (moodIdleResetRef.current) clearTimeout(moodIdleResetRef.current);
@@ -316,13 +326,16 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
   const canSend = input.trim().length > 0 && !isReplying && wsState === 'open';
 
-  const handleSend = (msg?: string) => {
-    const messageToSend = msg || input.trim();
-    if (!messageToSend || isReplying) return;
-    if (sendMessage(messageToSend)) {
-      setInput('');
-    }
-  };
+  const handleSend = useCallback(
+    (msg?: string) => {
+      const messageToSend = msg || input.trim();
+      if (!messageToSend || isReplying) return;
+      if (sendMessage(messageToSend)) {
+        setInput('');
+      }
+    },
+    [input, isReplying, sendMessage]
+  );
 
   const _handleDelete = async (id: number) => {
     try {
@@ -337,25 +350,78 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
     }
   };
 
-  const handleMicClick = () => {
-    if (!sttEnabled) return;
-    if (isListening || isSpeaking) {
-      stopAll();
-      setLiveTranscript('');
-      return;
-    }
-    setShowPermDialog(true);
-  };
-
-  const handleConfirmMicPerm = () => {
-    setShowPermDialog(false);
+  const startMicCapture = useCallback(() => {
+    sttBaseInputRef.current = input.trim();
+    setMicPermissionError(null);
     startListening((transcript, isFinal) => {
       setLiveTranscript(transcript);
+      const baseInput = sttBaseInputRef.current;
+      const preview = [baseInput, transcript.trim()].filter(Boolean).join(' ');
+      setInput(preview);
       if (isFinal && transcript.trim()) {
+        const finalMessage = [baseInput, transcript.trim()].filter(Boolean).join(' ');
         setLiveTranscript('');
-        handleSend(transcript);
+        setInput('');
+        sttBaseInputRef.current = '';
+        handleSend(finalMessage);
       }
     });
+  }, [handleSend, input, startListening]);
+
+  const requestMicPermission = useCallback(async (): Promise<boolean> => {
+    if (hasCheckedMicPermission) return hasMicPermissionGranted;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMicPermissionError('Microphone access is unavailable in this browser.');
+      setHasCheckedMicPermission(true);
+      setHasMicPermissionGranted(false);
+      return false;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      setMicPermissionError(null);
+      setHasCheckedMicPermission(true);
+      setHasMicPermissionGranted(true);
+      return true;
+    } catch {
+      setMicPermissionError(
+        'Microphone permission was denied. Please enable it in browser settings.'
+      );
+      setHasCheckedMicPermission(true);
+      setHasMicPermissionGranted(false);
+      return false;
+    }
+  }, [hasCheckedMicPermission, hasMicPermissionGranted]);
+
+  const handleMicClick = async () => {
+    if (!sttEnabled) return;
+    if (isListening) {
+      stopAll();
+      setLiveTranscript('');
+      sttBaseInputRef.current = '';
+      return;
+    }
+    if (!hasCheckedMicPermission) {
+      setShowPermDialog(true);
+      return;
+    }
+    if (!hasMicPermissionGranted) {
+      setMicPermissionError(
+        'Microphone permission was denied. Please enable it in browser settings.'
+      );
+      return;
+    }
+    startMicCapture();
+  };
+
+  const handleConfirmMicPerm = async () => {
+    setShowPermDialog(false);
+    const granted = await requestMicPermission();
+    if (granted) {
+      startMicCapture();
+    }
   };
 
   const connectionHint =
@@ -417,6 +483,17 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
                 </Button>
               )}
             </div>
+          )}
+          {micPermissionError && (
+            <p className='rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-200'>
+              {micPermissionError}
+            </p>
+          )}
+          {sttEnabled && hasSTT && (
+            <p className='rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200'>
+              Tip: In noisy environments, speech recognition quality may degrade. Move to a quieter
+              space for better results.
+            </p>
           )}
 
           <ScrollArea
@@ -537,16 +614,16 @@ export default function ChatConversation({ sttEnabled, ttsEnabled }: ChatConvers
 
             <Button
               className={`h-9 w-9 shrink-0 rounded-full transition-colors ${
-                isListening || isSpeaking
+                isListening
                   ? 'bg-rose-500 text-white hover:bg-rose-400'
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
               }`}
               disabled={!hasSTT || !sttEnabled}
-              onClick={handleMicClick}
+              onClick={() => void handleMicClick()}
               size='icon'
               variant='secondary'
             >
-              {isListening || isSpeaking ? (
+              {isListening ? (
                 <IconPlayerStopFilled className='h-4 w-4' />
               ) : (
                 <IconMicrophone className='h-4 w-4' />

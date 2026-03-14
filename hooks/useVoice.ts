@@ -20,6 +20,8 @@ interface SpeechRecognition extends EventTarget {
   stop: () => void;
   abort: () => void;
   onstart: (event: Event) => void;
+  onaudiostart: (event: Event) => void;
+  onaudioend: (event: Event) => void;
   onresult: (event: SpeechRecognitionEvent) => void;
   onerror: (event: SpeechRecognitionErrorEvent) => void;
   onend: (event: Event) => void;
@@ -46,6 +48,10 @@ export const useVoice = () => {
   // Ref to hold the SpeechRecognition instance
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const onResultRef = useRef<((finalText: string, isFinal: boolean) => void) | null>(null);
+  const shouldContinueListeningRef = useRef<boolean>(false);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastInterimRef = useRef<string>('');
 
   // Support + voices check
   useEffect(() => {
@@ -57,6 +63,9 @@ export const useVoice = () => {
     setHasTTS(ttsSupported);
     setHasSTT(sttSupported);
     setIsSupported(ttsSupported || sttSupported);
+    if (!sttSupported) {
+      console.warn('Speech-to-Text is unsupported in this browser.');
+    }
 
     if (ttsSupported) {
       const updateVoices = () => {
@@ -69,6 +78,15 @@ export const useVoice = () => {
     return () => {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
+      }
+      shouldContinueListeningRef.current = false;
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
       }
       if (recognitionRef.current) recognitionRef.current.abort();
       reset();
@@ -154,6 +172,16 @@ export const useVoice = () => {
     (onResult: (transcript: string, isFinal: boolean) => void) => {
       if (!hasSTT) return;
       onResultRef.current = onResult;
+      shouldContinueListeningRef.current = true;
+      lastInterimRef.current = '';
+      if (silenceTimerRef.current) {
+        clearTimeout(silenceTimerRef.current);
+        silenceTimerRef.current = null;
+      }
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = null;
+      }
 
       // Stop any ongoing speech or recognition before starting new STT
       if ('speechSynthesis' in window) {
@@ -170,12 +198,33 @@ export const useVoice = () => {
       const recognition = new SpeechRecognitionConstructor();
       recognitionRef.current = recognition;
 
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
+      const armInactivityTimeout = () => {
+        if (inactivityTimerRef.current) {
+          clearTimeout(inactivityTimerRef.current);
+        }
+        inactivityTimerRef.current = setTimeout(() => {
+          shouldContinueListeningRef.current = false;
+          recognition.stop();
+          setIsListening(false);
+        }, 2000);
+      };
+
       recognition.onstart = () => {
         setIsListening(true);
+        setMood('idle');
+        armInactivityTimeout();
+      };
+
+      recognition.onaudiostart = () => {
+        setIsListening(true);
+        armInactivityTimeout();
+      };
+
+      recognition.onaudioend = () => {
         setMood('idle');
       };
 
@@ -185,6 +234,22 @@ export const useVoice = () => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) final = event.results[i][0].transcript;
           else interim = event.results[i][0].transcript;
+        }
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        armInactivityTimeout();
+        if (interim) {
+          lastInterimRef.current = interim;
+          silenceTimerRef.current = setTimeout(() => {
+            if (!lastInterimRef.current.trim()) return;
+            onResult(lastInterimRef.current, true);
+            lastInterimRef.current = '';
+          }, 1800);
+        }
+        if (final) {
+          lastInterimRef.current = '';
         }
         onResult(final || interim, !!final);
       };
@@ -215,7 +280,20 @@ export const useVoice = () => {
         }
       };
 
-      recognition.onend = () => setIsListening(false);
+      recognition.onend = () => {
+        setIsListening(false);
+        if (inactivityTimerRef.current) {
+          clearTimeout(inactivityTimerRef.current);
+          inactivityTimerRef.current = null;
+        }
+        if (!shouldContinueListeningRef.current || !onResultRef.current) return;
+        setTimeout(() => {
+          if (shouldContinueListeningRef.current && onResultRef.current) {
+            startListening(onResultRef.current);
+          }
+        }, 200);
+      };
+
       recognition.start();
     },
     [hasSTT, setIsListening, setMood]
@@ -227,6 +305,16 @@ export const useVoice = () => {
 
   // Function to stop all ongoing speech and recognition, and reset avatar state
   const stopAll = useCallback(() => {
+    shouldContinueListeningRef.current = false;
+    lastInterimRef.current = '';
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
