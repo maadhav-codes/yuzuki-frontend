@@ -127,18 +127,23 @@ export default function ChatConversation({
   const {
     chatError,
     hasFirstChunk,
+    hasMoreMessages,
     isReplying,
     loadingMessages,
     messages,
     reconnectInSec,
     resetChatState,
     sessionId,
+    setHasMoreMessages,
     setLoadingMessages,
+    setMaxMessagesLimit,
     setMessages,
     setSessionId,
     wsState,
   } = useChatStore();
   const router = useRouter();
+
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
   // Reset active speech message ID when avatar stops speaking
   useEffect(() => {
@@ -250,6 +255,38 @@ export default function ChatConversation({
     }
   }, [router, signOut]);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (!user || sessionId === null) return;
+    try {
+      setIsLoadingOlder(true);
+      const currentCount = messages.length;
+      const data = await api.getMessages(sessionId, 10, currentCount);
+      setMaxMessagesLimit(currentCount + 10);
+      setMessages((prev) => {
+        const messageIds = new Set(prev.map((m) => m.id));
+        const newMessages = data.filter((m) => !messageIds.has(m.id));
+        return [...newMessages, ...prev];
+      });
+      setHasMoreMessages(data.length === 10);
+    } catch (err) {
+      if (isAuthError(err)) {
+        await handleAuthFailure();
+        return;
+      }
+      console.error(err);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, [
+    user,
+    sessionId,
+    messages.length,
+    setMessages,
+    setHasMoreMessages,
+    setMaxMessagesLimit,
+    handleAuthFailure,
+  ]);
+
   const { closeSocket, reconcileFetchedMessages, sendMessage, stopGeneration } = useWebSocket({
     applyImmediateMood,
     onAuthFailure: handleAuthFailure,
@@ -264,8 +301,10 @@ export default function ChatConversation({
     try {
       setLoadingMessages(true);
       setChatLoading(true);
+      setMaxMessagesLimit(10);
       const data = await api.getMessages(sessionId, 10);
       setMessages(reconcileFetchedMessages(data));
+      setHasMoreMessages(data.length === 10);
     } catch (err) {
       if (isAuthError(err)) {
         await handleAuthFailure();
@@ -284,6 +323,8 @@ export default function ChatConversation({
     setLoadingMessages,
     setChatLoading,
     setMessages,
+    setMaxMessagesLimit,
+    setHasMoreMessages,
   ]);
 
   useEffect(() => {
@@ -575,85 +616,106 @@ export default function ChatConversation({
                   <p className='mt-1 text-xs text-slate-500'>Say hello to begin.</p>
                 </div>
               ) : (
-                messages.map((msg) => (
-                  <div
-                    className={`flex w-full ${msg.is_user ? 'justify-end' : 'justify-start'}`}
-                    key={msg.id}
-                  >
+                <>
+                  {hasMoreMessages && !loadingMessages && (
+                    <div className='flex w-full justify-center py-2'>
+                      <Button
+                        className='h-8 text-xs text-cyan-400 hover:text-cyan-300 hover:bg-cyan-950/30 rounded-full px-4'
+                        disabled={isLoadingOlder}
+                        onClick={loadOlderMessages}
+                        variant='ghost'
+                      >
+                        {isLoadingOlder ? (
+                          <>
+                            <span className='mr-2 h-3 w-3 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent' />
+                            Loading...
+                          </>
+                        ) : (
+                          'Load Older'
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                  {messages.map((msg) => (
                     <div
-                      className={`group flex max-w-[85%] items-end gap-2 ${
-                        msg.is_user ? 'flex-row-reverse' : ''
-                      }`}
+                      className={`flex w-full ${msg.is_user ? 'justify-end' : 'justify-start'}`}
+                      key={msg.id}
                     >
                       <div
-                        className={`relative rounded-2xl px-4 py-2.5 shadow-sm ${
-                          msg.is_user
-                            ? 'rounded-br-sm bg-cyan-600 text-white'
-                            : 'rounded-bl-sm border border-slate-700/50 bg-slate-800/80 text-slate-100'
+                        className={`group flex max-w-[85%] items-end gap-2 ${
+                          msg.is_user ? 'flex-row-reverse' : ''
                         }`}
                       >
-                        <p className='whitespace-pre-wrap text-[13px] leading-relaxed'>
-                          {msg.content}
-                        </p>
+                        <div
+                          className={`relative rounded-2xl px-4 py-2.5 shadow-sm ${
+                            msg.is_user
+                              ? 'rounded-br-sm bg-cyan-600 text-white'
+                              : 'rounded-bl-sm border border-slate-700/50 bg-slate-800/80 text-slate-100'
+                          }`}
+                        >
+                          <p className='whitespace-pre-wrap text-[13px] leading-relaxed'>
+                            {msg.content}
+                          </p>
 
-                        {!msg.is_user && hasTTS && (
-                          <Button
-                            aria-label={
-                              !ttsEnabled
-                                ? 'Play message (TTS disabled)'
-                                : activeSpeechMessageId === msg.id && isSpeaking
-                                  ? 'Pause playback'
-                                  : activeSpeechMessageId === msg.id && isPaused
-                                    ? 'Resume playback'
-                                    : 'Play message'
-                            }
-                            className={`absolute -bottom-3 -right-3 h-7 w-7 rounded-full border border-slate-700 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
-                              activeSpeechMessageId === msg.id && (isSpeaking || isPaused)
-                                ? 'bg-cyan-600 text-white hover:bg-cyan-500 opacity-100'
-                                : 'bg-slate-900 text-slate-400 opacity-0 hover:bg-slate-800 hover:text-cyan-400 group-hover:opacity-100'
-                            }`}
-                            disabled={!ttsEnabled}
-                            onClick={() => {
-                              if (activeSpeechMessageId === msg.id) {
-                                if (isSpeaking) {
-                                  pauseTTS();
-                                } else if (isPaused) {
-                                  resumeTTS();
+                          {!msg.is_user && hasTTS && (
+                            <Button
+                              aria-label={
+                                !ttsEnabled
+                                  ? 'Play message (TTS disabled)'
+                                  : activeSpeechMessageId === msg.id && isSpeaking
+                                    ? 'Pause playback'
+                                    : activeSpeechMessageId === msg.id && isPaused
+                                      ? 'Resume playback'
+                                      : 'Play message'
+                              }
+                              className={`absolute -bottom-3 -right-3 h-7 w-7 rounded-full border border-slate-700 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                                activeSpeechMessageId === msg.id && (isSpeaking || isPaused)
+                                  ? 'bg-cyan-600 text-white hover:bg-cyan-500 opacity-100'
+                                  : 'bg-slate-900 text-slate-400 opacity-0 hover:bg-slate-800 hover:text-cyan-400 group-hover:opacity-100'
+                              }`}
+                              disabled={!ttsEnabled}
+                              onClick={() => {
+                                if (activeSpeechMessageId === msg.id) {
+                                  if (isSpeaking) {
+                                    pauseTTS();
+                                  } else if (isPaused) {
+                                    resumeTTS();
+                                  } else {
+                                    void speakWithFallback(msg.content, pitch, rate, volume);
+                                  }
                                 } else {
+                                  setActiveSpeechMessageId(msg.id);
                                   void speakWithFallback(msg.content, pitch, rate, volume);
                                 }
-                              } else {
-                                setActiveSpeechMessageId(msg.id);
-                                void speakWithFallback(msg.content, pitch, rate, volume);
+                              }}
+                              size='icon'
+                              title={
+                                !ttsEnabled
+                                  ? 'TTS disabled'
+                                  : activeSpeechMessageId === msg.id && isSpeaking
+                                    ? 'Pause playback'
+                                    : activeSpeechMessageId === msg.id && isPaused
+                                      ? 'Resume playback'
+                                      : 'Play message'
                               }
-                            }}
-                            size='icon'
-                            title={
-                              !ttsEnabled
-                                ? 'TTS disabled'
-                                : activeSpeechMessageId === msg.id && isSpeaking
-                                  ? 'Pause playback'
-                                  : activeSpeechMessageId === msg.id && isPaused
-                                    ? 'Resume playback'
-                                    : 'Play message'
-                            }
-                            variant='outline'
-                          >
-                            {activeSpeechMessageId === msg.id && isSpeaking ? (
-                              <IconPlayerPauseFilled className='h-3.5 w-3.5' />
-                            ) : activeSpeechMessageId === msg.id && isPaused ? (
-                              <IconPlayerPlayFilled className='h-3.5 w-3.5' />
-                            ) : (
-                              <IconVolume2 className='h-3.5 w-3.5' />
-                            )}
-                          </Button>
-                        )}
+                              variant='outline'
+                            >
+                              {activeSpeechMessageId === msg.id && isSpeaking ? (
+                                <IconPlayerPauseFilled className='h-3.5 w-3.5' />
+                              ) : activeSpeechMessageId === msg.id && isPaused ? (
+                                <IconPlayerPlayFilled className='h-3.5 w-3.5' />
+                              ) : (
+                                <IconVolume2 className='h-3.5 w-3.5' />
+                              )}
+                            </Button>
+                          )}
 
-                        <p className='mt-1 text-[11px] opacity-70'>{formatTime(msg.timestamp)}</p>
+                          <p className='mt-1 text-[11px] opacity-70'>{formatTime(msg.timestamp)}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </>
               )}
 
               {liveTranscript && (
