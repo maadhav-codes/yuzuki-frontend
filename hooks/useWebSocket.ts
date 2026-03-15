@@ -108,7 +108,8 @@ export function useWebSocket({
           .replace(/^https:/i, 'wss:')
           .replace(/\/+$/, '')
       : `${window.location.origin.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:')}/backend`;
-    const url = new URL(`${wsBase}/ws/chat`);
+    const wsPath = wsBase.endsWith('/api/v1') ? '/ws/chat' : '/api/v1/ws/chat';
+    const url = new URL(`${wsBase}${wsPath}`);
     url.searchParams.set('conversation_id', String(activeSessionId));
     url.searchParams.set('token', token);
     return url.toString();

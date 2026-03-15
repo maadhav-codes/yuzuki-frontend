@@ -2,7 +2,7 @@ import { jwtDecode } from 'jwt-decode';
 import type { MessageCreate, MessageRead, MessageUpdate, SessionRead } from '@/types/api';
 import { supabase } from '@/utils/supabase/client';
 
-const API_BASE = '/backend';
+const API_BASE = '/backend/api/v1';
 
 export class ApiError extends Error {
   status: number;
