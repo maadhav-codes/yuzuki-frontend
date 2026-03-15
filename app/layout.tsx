@@ -3,6 +3,7 @@ import './globals.css';
 import { Noto_Sans } from 'next/font/google';
 import Script from 'next/script';
 import { AuthProvider } from '@/components/AuthProvider';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const notoSans = Noto_Sans({ variable: '--font-sans' });
 
@@ -49,7 +50,9 @@ export default function RootLayout({
     <html className={notoSans.variable} lang='en'>
       <body className='bg-slate-50 text-slate-900 antialiased'>
         <Script src='/cubism4/live2dcubismcore.min.js' strategy='beforeInteractive' />
-        <AuthProvider>{children}</AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>{children}</AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );
