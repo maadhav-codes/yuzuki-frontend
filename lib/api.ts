@@ -1,3 +1,4 @@
+import { jwtDecode } from 'jwt-decode';
 import type { MessageCreate, MessageRead, MessageUpdate, SessionRead } from '@/types/api';
 import { supabase } from '@/utils/supabase/client';
 
@@ -13,11 +14,32 @@ export class ApiError extends Error {
   }
 }
 
+type JwtPayload = {
+  exp?: number;
+};
+
+function parseJwtPayload(token: string): JwtPayload | null {
+  try {
+    return jwtDecode<JwtPayload>(token);
+  } catch {
+    return null;
+  }
+}
+
+function isTokenUsable(token: string): boolean {
+  const payload = parseJwtPayload(token);
+  if (!payload) return false;
+  if (typeof payload.exp !== 'number') return false;
+  return payload.exp * 1000 > Date.now() + 15_000;
+}
+
 async function getAuthHeader(): Promise<string | null> {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  return session?.access_token || null;
+  const token = session?.access_token || null;
+  if (!token) return null;
+  return isTokenUsable(token) ? token : null;
 }
 
 async function authFetch<T>(url: string, options: RequestInit = {}, retries = 1): Promise<T> {
