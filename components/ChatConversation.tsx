@@ -25,6 +25,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useVoice } from '@/hooks/useVoice';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { ApiError, api } from '@/lib/api';
@@ -37,8 +38,14 @@ import { useUserStore } from '@/store/useUserStore';
 
 const AvatarView = dynamic(() => import('@/components/AvatarView'), {
   loading: () => (
-    <div className='flex h-full w-full items-center justify-center bg-slate-900/50 text-slate-400'>
-      Loading Avatar...
+    <div className='h-full w-full bg-slate-900/50 p-5'>
+      <div className='flex h-full flex-col justify-end rounded-xl border border-slate-800/60 bg-slate-900/30 p-4'>
+        <Skeleton className='mb-3 h-3 w-24 bg-slate-700/70' />
+        <Skeleton className='mb-6 h-2 w-40 bg-slate-800/90' />
+        <div className='mx-auto mb-3 mt-auto flex h-56 w-40 items-end justify-center rounded-t-[999px] bg-slate-800/60'>
+          <Skeleton className='h-44 w-28 rounded-t-[999px] bg-slate-700/70' />
+        </div>
+      </div>
     </div>
   ),
   ssr: false,
@@ -607,6 +614,32 @@ export default function ChatConversation({
             ref={messagesContainerRef}
           >
             <div className='flex flex-col gap-4 py-2'>
+              {loadingMessages ? (
+                <div className='space-y-4 px-1'>
+                  <div className='flex justify-start'>
+                    <div className='w-[78%] space-y-2 rounded-2xl rounded-bl-sm border border-slate-700/50 bg-slate-800/70 p-3.5'>
+                      <Skeleton className='h-3 w-[92%]' />
+                      <Skeleton className='h-3 w-[84%]' />
+                      <Skeleton className='h-2 w-14 bg-slate-700/70' />
+                    </div>
+                  </div>
+                  <div className='flex justify-end'>
+                    <div className='w-[66%] space-y-2 rounded-2xl rounded-br-sm bg-cyan-700/40 p-3.5'>
+                      <Skeleton className='h-3 w-[88%] bg-cyan-300/20' />
+                      <Skeleton className='h-3 w-[70%] bg-cyan-300/20' />
+                      <Skeleton className='h-2 w-12 bg-cyan-200/20' />
+                    </div>
+                  </div>
+                  <div className='flex justify-start'>
+                    <div className='w-[72%] space-y-2 rounded-2xl rounded-bl-sm border border-slate-700/50 bg-slate-800/70 p-3.5'>
+                      <Skeleton className='h-3 w-[90%]' />
+                      <Skeleton className='h-3 w-[60%]' />
+                      <Skeleton className='h-2 w-10 bg-slate-700/70' />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {messages.length === 0 && !loadingMessages ? (
                 <div className='mt-10 flex flex-col items-center justify-center text-center'>
                   <div className='mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-slate-800/50 text-slate-400'>

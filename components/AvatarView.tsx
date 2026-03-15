@@ -3,6 +3,7 @@
 import type { Application } from 'pixi.js';
 import type { Live2DModel } from 'pixi-live2d-display-advanced/cubism4';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
 import { applyLive2DMood } from '@/lib/live2d/moodController';
 import { getPerformanceProfile } from '@/lib/live2d/performanceProfile';
@@ -142,7 +143,13 @@ export default function AvatarView() {
         role='img'
       />
       {isLoading && !error ? (
-        <div className='absolute bottom-2 text-white text-xs opacity-70'>Loading avatar...</div>
+        <div className='absolute inset-0 flex flex-col justify-end bg-slate-900/40 p-4'>
+          <div className='mb-2 text-xs text-slate-300/80'>Preparing avatar...</div>
+          <div className='mx-auto mb-2 flex h-52 w-36 items-end justify-center rounded-t-[999px] bg-slate-800/55'>
+            <Skeleton className='h-40 w-24 rounded-t-[999px] bg-slate-700/70' />
+          </div>
+          <Skeleton className='mx-auto h-2 w-32 bg-slate-700/70' />
+        </div>
       ) : null}
       {error ? <div className='absolute bottom-2 text-red-300 text-xs'>{error}</div> : null}
     </div>
