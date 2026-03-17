@@ -5,6 +5,7 @@ type ModelWithCore = Live2DModel & {
   internalModel?: {
     coreModel?: {
       setParameterValueById?: (id: string, value: number) => void;
+      getParameterValueById?: (id: string) => number;
     };
   };
 };
@@ -24,8 +25,6 @@ function applyCorePreset(model: Live2DModel, moodPreset: Mood): void {
 
   switch (moodPreset) {
     case 'thinking':
-      setParam('ParamAngleX', -6);
-      setParam('ParamAngleY', 3);
       setParam('ParamEyeLOpen', 0.85);
       setParam('ParamEyeROpen', 0.85);
       setParam('ParamMouthOpenY', 0.05);
@@ -57,7 +56,7 @@ function applyCorePreset(model: Live2DModel, moodPreset: Mood): void {
     default:
       setParam('ParamAngleX', 0);
       setParam('ParamAngleY', 0);
-      setParam('ParamMouthOpenY', 0.1);
+      setParam('ParamMouthOpenY', 0.0);
       break;
   }
 }
@@ -125,5 +124,46 @@ export function applyLive2DMood(model: Live2DModel, currentMood: Mood): void {
       tryMotion(model, ['idle']);
       applyCorePreset(model, 'idle');
       break;
+  }
+}
+
+export function runIdleLoop(model: Live2DModel, mood: Mood): void {
+  const coreModel = (model as ModelWithCore).internalModel?.coreModel;
+  if (!coreModel?.setParameterValueById) return;
+
+  const setParam = (id: string, value: number) => {
+    try {
+      coreModel.setParameterValueById?.(id, value);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const time = performance.now() * 0.001;
+
+  // Breathing simulation (slow sine wave)
+  const breathCycle = Math.sin(time * 0.8);
+  const breathY = breathCycle * 1.2; // Subtle up/down (nod)
+  const breathX = Math.sin(time * 0.4) * 0.5; // Subtle left/right sway
+
+  if (mood === 'thinking') {
+    // "Thinking" idle state: Subtle head tilt variations
+    const tiltVariation = Math.sin(time * 0.3) * 5; // Gentle tilt
+    const thinkBaseX = -6;
+    const thinkBaseY = 3;
+
+    // Apply thinking micro-movements
+    setParam('ParamAngleX', thinkBaseX + breathX + tiltVariation * 0.2);
+    setParam('ParamAngleY', thinkBaseY + breathY);
+
+    const eyeSquint = 0.8 + Math.sin(time * 0.5) * 0.05;
+    setParam('ParamEyeLOpen', eyeSquint);
+    setParam('ParamEyeROpen', eyeSquint);
+  } else if (mood === 'idle' || mood === 'neutral') {
+    setParam('ParamAngleX', breathX);
+    setParam('ParamAngleY', breathY);
+
+    setParam('ParamBodyAngleX', breathX * 0.5);
+    setParam('ParamBodyAngleY', breathY * 0.5);
   }
 }

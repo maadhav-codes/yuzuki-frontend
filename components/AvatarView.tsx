@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useLipSync } from '@/hooks/useLipSync';
 import { useTTSAudioState } from '@/hooks/useVoice';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
-import { applyLive2DMood } from '@/lib/live2d/moodController';
+import { applyLive2DMood, runIdleLoop } from '@/lib/live2d/moodController';
 import { getPerformanceProfile } from '@/lib/live2d/performanceProfile';
 import { useAvatarStore } from '@/store/avatarStore';
 
@@ -171,6 +171,11 @@ export default function AvatarView() {
       raf = requestAnimationFrame(tick);
       if (ts - lastFrameAt < 33) return;
       lastFrameAt = ts;
+
+      const model = modelRef.current;
+      if (!model) return;
+
+      runIdleLoop(model, moodRef.current);
 
       if (!isSpeakingRef.current) {
         setMouthOpen(0.08);
