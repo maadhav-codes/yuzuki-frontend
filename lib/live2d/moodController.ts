@@ -10,55 +10,172 @@ type ModelWithCore = Live2DModel & {
   };
 };
 
-function applyCorePreset(model: Live2DModel, moodPreset: Mood): void {
-  const coreModel = (model as ModelWithCore).internalModel?.coreModel;
+const TRANSITION_DURATION_MS = 650;
+const EASE_OUT_CUBIC = (t: number): number => 1 - (1 - t) ** 3;
 
-  if (!coreModel?.setParameterValueById) return;
+interface ParamState {
+  [key: string]: number;
+}
 
-  const setParam = (id: string, value: number) => {
-    try {
-      coreModel.setParameterValueById?.(id, value);
-    } catch {
-      // Ignore unsupported or missing parameters for model portability
-    }
-  };
-
-  switch (moodPreset) {
+function getMoodPreset(mood: Mood): ParamState {
+  switch (mood) {
     case 'thinking':
-      setParam('ParamEyeLOpen', 0.85);
-      setParam('ParamEyeROpen', 0.85);
-      setParam('ParamMouthOpenY', 0.05);
-      break;
+      return {
+        ParamAngleX: -6,
+        ParamAngleY: 3,
+        ParamEyeLOpen: 0.85,
+        ParamEyeROpen: 0.85,
+        ParamMouthOpenY: 0.05,
+      };
     case 'surprised':
-      setParam('ParamAngleX', 0);
-      setParam('ParamAngleY', 5);
-      setParam('ParamEyeLOpen', 1);
-      setParam('ParamEyeROpen', 1);
-      setParam('ParamMouthOpenY', 0.65);
-      break;
+      return {
+        ParamAngleX: 0,
+        ParamAngleY: 5,
+        ParamEyeLOpen: 1,
+        ParamEyeROpen: 1,
+        ParamMouthOpenY: 0.65,
+      };
     case 'happy':
-      setParam('ParamAngleX', 2);
-      setParam('ParamMouthOpenY', 0.35);
-      break;
+      return {
+        ParamAngleX: 2,
+        ParamAngleY: 0,
+        ParamEyeLOpen: 1.0,
+        ParamEyeROpen: 1.0,
+        ParamMouthOpenY: 0.35,
+      };
     case 'sad':
-      setParam('ParamAngleX', -2);
-      setParam('ParamAngleY', -4);
-      setParam('ParamMouthOpenY', 0.1);
-      break;
+      return {
+        ParamAngleX: -2,
+        ParamAngleY: -4,
+        ParamEyeLOpen: 0.8,
+        ParamEyeROpen: 0.8,
+        ParamMouthOpenY: 0.1,
+      };
     case 'angry':
-      setParam('ParamAngleX', 4);
-      setParam('ParamAngleY', -2);
-      setParam('ParamMouthOpenY', 0.2);
-      break;
+      return {
+        ParamAngleX: 4,
+        ParamAngleY: -2,
+        ParamEyeLOpen: 0.9,
+        ParamEyeROpen: 0.9,
+        ParamMouthOpenY: 0.2,
+      };
     case 'talking':
-      // Dynamic lip sync will drive the mouth open parameter
-      break;
+      return {
+        ParamAngleX: 0,
+        ParamAngleY: 0,
+        ParamMouthOpenY: 0.0,
+      };
     default:
-      setParam('ParamAngleX', 0);
-      setParam('ParamAngleY', 0);
-      setParam('ParamMouthOpenY', 0.0);
-      break;
+      return {
+        ParamAngleX: 0,
+        ParamAngleY: 0,
+        ParamEyeLOpen: 1.0,
+        ParamEyeROpen: 1.0,
+        ParamMouthOpenY: 0.0,
+      };
   }
+}
+
+class TransitionManager {
+  private startState: ParamState = {};
+  private targetState: ParamState = getMoodPreset('idle');
+  private startTime: number = 0;
+  private isTransitioning: boolean = false;
+  private currentMood: Mood = 'idle';
+
+  constructor(private model: Live2DModel) {}
+
+  public transitionTo(mood: Mood): void {
+    const normalizedMood = mood === 'neutral' ? 'idle' : mood;
+
+    if (this.currentMood === normalizedMood && !this.isTransitioning) return;
+
+    this.currentMood = normalizedMood;
+    this.startState = this.captureCurrentState();
+    this.targetState = getMoodPreset(normalizedMood);
+    this.startTime = performance.now();
+    this.isTransitioning = true;
+  }
+
+  public update(): void {
+    const coreModel = (this.model as ModelWithCore).internalModel?.coreModel;
+    if (!coreModel?.setParameterValueById) {
+      this.isTransitioning = false;
+      return;
+    }
+
+    if (!this.isTransitioning) {
+      for (const id in this.targetState) {
+        try {
+          coreModel.setParameterValueById(id, this.targetState[id]);
+        } catch {
+          // Ignore missing params
+        }
+      }
+      return;
+    }
+
+    const now = performance.now();
+    const elapsed = now - this.startTime;
+    let progress = Math.min(elapsed / TRANSITION_DURATION_MS, 1);
+
+    progress = EASE_OUT_CUBIC(progress);
+
+    for (const id in this.targetState) {
+      const startVal = this.startState[id] ?? 0;
+      const targetVal = this.targetState[id];
+      const currentVal = startVal + (targetVal - startVal) * progress;
+
+      try {
+        coreModel.setParameterValueById(id, currentVal);
+      } catch {
+        // Ignore missing params
+      }
+    }
+
+    if (progress >= 1) {
+      this.isTransitioning = false;
+    }
+  }
+
+  private captureCurrentState(): ParamState {
+    const coreModel = (this.model as ModelWithCore).internalModel?.coreModel;
+    const state: ParamState = {};
+
+    const paramIds = [
+      'ParamAngleX',
+      'ParamAngleY',
+      'ParamEyeLOpen',
+      'ParamEyeROpen',
+      'ParamMouthOpenY',
+    ];
+
+    if (coreModel?.getParameterValueById) {
+      for (const id of paramIds) {
+        try {
+          state[id] = coreModel.getParameterValueById(id);
+        } catch {
+          state[id] = 0;
+        }
+      }
+    }
+    return state;
+  }
+
+  public getCurrentMood(): Mood {
+    return this.currentMood;
+  }
+}
+
+const transitionManagers = new WeakMap<Live2DModel, TransitionManager>();
+
+function getManager(model: Live2DModel): TransitionManager {
+  let manager = transitionManagers.get(model);
+  if (!manager) {
+    manager = new TransitionManager(model);
+    transitionManagers.set(model, manager);
+  }
+  return manager;
 }
 
 function tryExpression(model: Live2DModel, ids: string[]): void {
@@ -68,7 +185,7 @@ function tryExpression(model: Live2DModel, ids: string[]): void {
         const matched = await model.expression(id);
         if (matched) return;
       } catch {
-        // Ignore and try fallback expression id
+        // Ignore
       }
     }
   };
@@ -81,48 +198,44 @@ function tryMotion(model: Live2DModel, groups: string[]): void {
       void model.motion(group);
       return;
     } catch {
-      // Ignore and try fallback motion group
+      // Ignore
     }
   }
 }
 
 export function applyLive2DMood(model: Live2DModel, currentMood: Mood): void {
   const normalizedMood = currentMood === 'neutral' ? 'idle' : currentMood;
+  const manager = getManager(model);
+
+  manager.transitionTo(normalizedMood);
 
   switch (normalizedMood) {
     case 'talking':
       tryMotion(model, ['tap_body', 'talk', 'idle']);
       tryExpression(model, ['f01']);
-      applyCorePreset(model, 'talking');
       break;
     case 'happy':
       tryExpression(model, ['f02', 'happy']);
       tryMotion(model, ['happy', 'tap_body', 'idle']);
-      applyCorePreset(model, 'happy');
       break;
     case 'sad':
       tryExpression(model, ['f03', 'sad']);
       tryMotion(model, ['sad', 'idle']);
-      applyCorePreset(model, 'sad');
       break;
     case 'angry':
       tryExpression(model, ['f04', 'angry']);
       tryMotion(model, ['angry', 'tap_body', 'idle']);
-      applyCorePreset(model, 'angry');
       break;
     case 'surprised':
       tryExpression(model, ['f05', 'surprised', 'surprise']);
       tryMotion(model, ['surprised', 'surprise', 'tap_body', 'idle']);
-      applyCorePreset(model, 'surprised');
       break;
     case 'thinking':
       tryExpression(model, ['f06', 'thinking']);
       tryMotion(model, ['thinking', 'idle']);
-      applyCorePreset(model, 'thinking');
       break;
     default:
       tryMotion(model, ['idle']);
-      applyCorePreset(model, 'idle');
       break;
   }
 }
@@ -130,6 +243,13 @@ export function applyLive2DMood(model: Live2DModel, currentMood: Mood): void {
 export function runIdleLoop(model: Live2DModel, mood: Mood): void {
   const coreModel = (model as ModelWithCore).internalModel?.coreModel;
   if (!coreModel?.setParameterValueById) return;
+
+  const manager = getManager(model);
+
+  manager.update();
+
+  const time = performance.now() * 0.001;
+  const breathCycle = Math.sin(time * 0.8);
 
   const setParam = (id: string, value: number) => {
     try {
@@ -139,31 +259,19 @@ export function runIdleLoop(model: Live2DModel, mood: Mood): void {
     }
   };
 
-  const time = performance.now() * 0.001;
+  const breathY = breathCycle * 1.2;
+  const breathX = Math.sin(time * 0.4) * 0.5;
 
-  // Breathing simulation (slow sine wave)
-  const breathCycle = Math.sin(time * 0.8);
-  const breathY = breathCycle * 1.2; // Subtle up/down (nod)
-  const breathX = Math.sin(time * 0.4) * 0.5; // Subtle left/right sway
+  const currentAngleX = coreModel.getParameterValueById?.('ParamAngleX') || 0;
+  const currentAngleY = coreModel.getParameterValueById?.('ParamAngleY') || 0;
 
   if (mood === 'thinking') {
-    // "Thinking" idle state: Subtle head tilt variations
-    const tiltVariation = Math.sin(time * 0.3) * 5; // Gentle tilt
-    const thinkBaseX = -6;
-    const thinkBaseY = 3;
-
-    // Apply thinking micro-movements
-    setParam('ParamAngleX', thinkBaseX + breathX + tiltVariation * 0.2);
-    setParam('ParamAngleY', thinkBaseY + breathY);
-
-    const eyeSquint = 0.8 + Math.sin(time * 0.5) * 0.05;
-    setParam('ParamEyeLOpen', eyeSquint);
-    setParam('ParamEyeROpen', eyeSquint);
+    const tiltVariation = Math.sin(time * 0.3) * 2;
+    setParam('ParamAngleX', currentAngleX + tiltVariation);
+    setParam('ParamAngleY', currentAngleY + breathY * 0.5);
   } else if (mood === 'idle' || mood === 'neutral') {
-    setParam('ParamAngleX', breathX);
-    setParam('ParamAngleY', breathY);
-
-    setParam('ParamBodyAngleX', breathX * 0.5);
-    setParam('ParamBodyAngleY', breathY * 0.5);
+    // For idle, just breathing
+    setParam('ParamAngleX', currentAngleX + breathX * 0.2); // subtle sway
+    setParam('ParamAngleY', currentAngleY + breathY * 0.3); // nod
   }
 }
