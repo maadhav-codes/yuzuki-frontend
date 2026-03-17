@@ -4,6 +4,8 @@ import type { Application } from 'pixi.js';
 import type { Live2DModel } from 'pixi-live2d-display-advanced/cubism4';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useLipSync } from '@/hooks/useLipSync';
+import { useTTSAudioState } from '@/hooks/useVoice';
 import { attachLegacyInteractionBridge } from '@/lib/live2d/legacyInteractionBridge';
 import { applyLive2DMood } from '@/lib/live2d/moodController';
 import { getPerformanceProfile } from '@/lib/live2d/performanceProfile';
@@ -21,11 +23,36 @@ export default function AvatarView() {
   const appRef = useRef<Application | null>(null);
   const modelRef = useRef<Live2DModel | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const { mood } = useAvatarStore();
+  const { isSpeaking, mood } = useAvatarStore();
   const moodRef = useRef(mood);
+  const isSpeakingRef = useRef(isSpeaking);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { audioElement, isPlaying } = useTTSAudioState();
+  const { mouthOpenY } = useLipSync({ audioElement, isPlaying, isSpeaking });
   moodRef.current = mood;
+  isSpeakingRef.current = isSpeaking;
+
+  const setMouthOpen = useCallback((value: number) => {
+    const model = modelRef.current as
+      | (Live2DModel & {
+          internalModel?: {
+            coreModel?: {
+              setParameterValueById?: (id: string, paramValue: number) => void;
+            };
+          };
+        })
+      | null;
+
+    const coreModel = model?.internalModel?.coreModel;
+    if (!coreModel?.setParameterValueById) return;
+
+    try {
+      coreModel.setParameterValueById('ParamMouthOpenY', value);
+    } catch {
+      // Ignore missing parameter on incompatible model assets.
+    }
+  }, []);
 
   const updateLayout = useCallback(() => {
     const app = appRef.current;
@@ -130,6 +157,35 @@ export default function AvatarView() {
     if (!model) return;
     applyLive2DMood(model, mood);
   }, [mood]);
+
+  const mouthOpenYRef = useRef(mouthOpenY);
+  useEffect(() => {
+    mouthOpenYRef.current = mouthOpenY;
+  }, [mouthOpenY]);
+
+  useEffect(() => {
+    let raf: number | null = null;
+    let lastFrameAt = 0;
+
+    const tick = (ts: number) => {
+      raf = requestAnimationFrame(tick);
+      if (ts - lastFrameAt < 33) return;
+      lastFrameAt = ts;
+
+      if (!isSpeakingRef.current) {
+        setMouthOpen(0.08);
+        return;
+      }
+
+      setMouthOpen(mouthOpenYRef.current);
+    };
+
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+    };
+  }, [setMouthOpen]);
 
   return (
     <div

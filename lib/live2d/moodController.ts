@@ -52,7 +52,7 @@ function applyCorePreset(model: Live2DModel, moodPreset: Mood): void {
       setParam('ParamMouthOpenY', 0.2);
       break;
     case 'talking':
-      setParam('ParamMouthOpenY', 0.5);
+      // Dynamic lip sync will drive the mouth open parameter
       break;
     default:
       setParam('ParamAngleX', 0);

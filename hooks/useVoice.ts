@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from '@/lib/api';
 import { useAvatarStore } from '@/store/avatarStore';
 
@@ -10,6 +10,38 @@ interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
   results: SpeechRecognitionResultList;
 }
+
+interface TTSAudioState {
+  audioElement: HTMLAudioElement | null;
+  isPlaying: boolean;
+  source: 'html-audio' | 'speech-synthesis' | null;
+}
+
+const ttsAudioStateListeners = new Set<() => void>();
+let ttsAudioState: TTSAudioState = {
+  audioElement: null,
+  isPlaying: false,
+  source: null,
+};
+
+const emitTTSAudioState = (next: TTSAudioState) => {
+  ttsAudioState = next;
+  ttsAudioStateListeners.forEach((listener) => {
+    listener();
+  });
+};
+
+const subscribeTTSAudioState = (listener: () => void) => {
+  ttsAudioStateListeners.add(listener);
+  return () => {
+    ttsAudioStateListeners.delete(listener);
+  };
+};
+
+const getTTSAudioSnapshot = () => ttsAudioState;
+
+export const useTTSAudioState = () =>
+  useSyncExternalStore(subscribeTTSAudioState, getTTSAudioSnapshot, getTTSAudioSnapshot);
 
 // SpeechRecognition API types (since they're not in TypeScript's lib.dom.d.ts yet)
 interface SpeechRecognition extends EventTarget {
@@ -52,6 +84,7 @@ export const useVoice = () => {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastInterimRef = useRef<string>('');
+  const activeFallbackAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Support + voices check
   useEffect(() => {
@@ -80,6 +113,11 @@ export const useVoice = () => {
         window.speechSynthesis.onvoiceschanged = null;
         window.speechSynthesis.cancel();
       }
+      if (activeFallbackAudioRef.current) {
+        activeFallbackAudioRef.current.pause();
+        activeFallbackAudioRef.current = null;
+      }
+      emitTTSAudioState({ audioElement: null, isPlaying: false, source: null });
       shouldContinueListeningRef.current = false;
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
@@ -117,6 +155,24 @@ export const useVoice = () => {
       setIsPaused(true);
       setIsSpeaking(false);
       setMood('idle');
+      emitTTSAudioState({
+        audioElement: null,
+        isPlaying: false,
+        source: 'speech-synthesis',
+      });
+    }
+
+    const activeAudio = activeFallbackAudioRef.current;
+    if (activeAudio && !activeAudio.paused) {
+      activeAudio.pause();
+      setIsPaused(true);
+      setIsSpeaking(false);
+      setMood('idle');
+      emitTTSAudioState({
+        audioElement: activeAudio,
+        isPlaying: false,
+        source: 'html-audio',
+      });
     }
   }, [setIsSpeaking, setMood]);
 
@@ -126,6 +182,25 @@ export const useVoice = () => {
       setIsPaused(false);
       setIsSpeaking(true);
       setMood('talking');
+      emitTTSAudioState({
+        audioElement: null,
+        isPlaying: true,
+        source: 'speech-synthesis',
+      });
+      return;
+    }
+
+    const activeAudio = activeFallbackAudioRef.current;
+    if (activeAudio?.paused) {
+      void activeAudio.play();
+      setIsPaused(false);
+      setIsSpeaking(true);
+      setMood('talking');
+      emitTTSAudioState({
+        audioElement: activeAudio,
+        isPlaying: true,
+        source: 'html-audio',
+      });
     }
   }, [setIsSpeaking, setMood]);
 
@@ -136,7 +211,12 @@ export const useVoice = () => {
 
       // Stop any ongoing speech or recognition before starting new TTS
       window.speechSynthesis.cancel();
+      if (activeFallbackAudioRef.current) {
+        activeFallbackAudioRef.current.pause();
+        activeFallbackAudioRef.current = null;
+      }
       setIsPaused(false);
+      emitTTSAudioState({ audioElement: null, isPlaying: false, source: null });
 
       // Basic chunking logic for long texts (split by common punctuation)
       const maxChunkLength = 200;
@@ -174,6 +254,11 @@ export const useVoice = () => {
             setIsSpeaking(true);
             setIsPaused(false);
             setMood('talking');
+            emitTTSAudioState({
+              audioElement: null,
+              isPlaying: true,
+              source: 'speech-synthesis',
+            });
           };
         }
 
@@ -182,11 +267,21 @@ export const useVoice = () => {
             setIsSpeaking(false);
             setIsPaused(false);
             setMood('idle');
+            emitTTSAudioState({
+              audioElement: null,
+              isPlaying: false,
+              source: null,
+            });
           };
           utterance.onerror = () => {
             setIsSpeaking(false);
             setIsPaused(false);
             setMood('idle');
+            emitTTSAudioState({
+              audioElement: null,
+              isPlaying: false,
+              source: null,
+            });
           };
         }
 
@@ -194,12 +289,22 @@ export const useVoice = () => {
           setIsPaused(true);
           setIsSpeaking(false);
           setMood('idle');
+          emitTTSAudioState({
+            audioElement: null,
+            isPlaying: false,
+            source: 'speech-synthesis',
+          });
         };
 
         utterance.onresume = () => {
           setIsPaused(false);
           setIsSpeaking(true);
           setMood('talking');
+          emitTTSAudioState({
+            audioElement: null,
+            isPlaying: true,
+            source: 'speech-synthesis',
+          });
         };
 
         window.speechSynthesis.speak(utterance);
@@ -227,6 +332,7 @@ export const useVoice = () => {
         const data = await api.generateTTS(text);
         if (data.audioUrl) {
           const audio = new Audio(data.audioUrl);
+          activeFallbackAudioRef.current = audio;
           audio.volume = volume;
           // Note: HTML5 Audio doesn't natively support easy pitch shifting without Web Audio API.
           // Fallback limits to rate change.
@@ -235,14 +341,36 @@ export const useVoice = () => {
           audio.onplay = () => {
             setIsSpeaking(true);
             setMood('talking');
+            setIsPaused(false);
+            emitTTSAudioState({
+              audioElement: audio,
+              isPlaying: true,
+              source: 'html-audio',
+            });
           };
           audio.onended = () => {
             setIsSpeaking(false);
             setMood('idle');
+            emitTTSAudioState({
+              audioElement: null,
+              isPlaying: false,
+              source: null,
+            });
+            if (activeFallbackAudioRef.current === audio) {
+              activeFallbackAudioRef.current = null;
+            }
           };
           audio.onerror = () => {
             setIsSpeaking(false);
             setMood('idle');
+            emitTTSAudioState({
+              audioElement: null,
+              isPlaying: false,
+              source: null,
+            });
+            if (activeFallbackAudioRef.current === audio) {
+              activeFallbackAudioRef.current = null;
+            }
           };
           await audio.play();
           return;
@@ -278,6 +406,11 @@ export const useVoice = () => {
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      if (activeFallbackAudioRef.current) {
+        activeFallbackAudioRef.current.pause();
+        activeFallbackAudioRef.current = null;
+      }
+      emitTTSAudioState({ audioElement: null, isPlaying: false, source: null });
       setError(null);
       setCanRetrySTT(false);
 
@@ -398,6 +531,13 @@ export const useVoice = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+
+    if (activeFallbackAudioRef.current) {
+      activeFallbackAudioRef.current.pause();
+      activeFallbackAudioRef.current = null;
+    }
+
+    emitTTSAudioState({ audioElement: null, isPlaying: false, source: null });
     setIsPaused(false);
     setIsSpeaking(false);
   }, [setIsSpeaking]);
@@ -432,6 +572,11 @@ export const useVoice = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    if (activeFallbackAudioRef.current) {
+      activeFallbackAudioRef.current.pause();
+      activeFallbackAudioRef.current = null;
+    }
+    emitTTSAudioState({ audioElement: null, isPlaying: false, source: null });
     setIsPaused(false);
     if (recognitionRef.current) recognitionRef.current.abort();
     reset();
@@ -453,5 +598,6 @@ export const useVoice = () => {
     stopAll,
     stopSTT,
     stopTTS,
+    ttsAudioState: useTTSAudioState(),
   };
 };
