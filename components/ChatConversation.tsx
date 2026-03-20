@@ -27,6 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useVoice } from '@/hooks/useVoice';
+import type { VoiceLanguageOverride } from '@/hooks/useVoiceSettings';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { ApiError, api } from '@/lib/api';
 import type { Mood } from '@/store/avatarStore';
@@ -64,17 +65,21 @@ function isAuthError(error: unknown): boolean {
 interface ChatConversationProps {
   sttEnabled: boolean;
   ttsEnabled: boolean;
+  languageOverride?: VoiceLanguageOverride;
   pitch?: number;
   rate?: number;
   volume?: number;
+  styleWeight?: number;
 }
 
 export default function ChatConversation({
   sttEnabled,
   ttsEnabled,
+  languageOverride = 'auto',
   pitch = 1.0,
   rate = 1.0,
   volume = 1.0,
+  styleWeight = 1.0,
 }: ChatConversationProps) {
   const MOOD_DEBOUNCE_MS = 160;
   const MOOD_IDLE_RESET_MS = 8_000;
@@ -113,7 +118,6 @@ export default function ChatConversation({
     error,
     hasSTT,
     hasTTS,
-    hasUsableTTSVoice,
     isPaused,
     isSupported,
     pauseTTS,
@@ -164,9 +168,28 @@ export default function ChatConversation({
     if (lastMsg && !lastMsg.is_user && !spokenRef.current.has(lastMsg.id) && hasTTS && ttsEnabled) {
       spokenRef.current.add(lastMsg.id);
       setActiveSpeechMessageId(lastMsg.id);
-      void speakWithFallback(lastMsg.content, pitch, rate, volume);
+      void speakWithFallback(
+        lastMsg.content,
+        pitch,
+        rate,
+        volume,
+        languageOverride,
+        mood,
+        styleWeight
+      );
     }
-  }, [messages, speakWithFallback, hasTTS, ttsEnabled, pitch, rate, volume]);
+  }, [
+    messages,
+    speakWithFallback,
+    hasTTS,
+    ttsEnabled,
+    languageOverride,
+    pitch,
+    rate,
+    volume,
+    mood,
+    styleWeight,
+  ]);
 
   useEffect(() => {
     if (!sttEnabled) stopSTT();
@@ -410,11 +433,8 @@ export default function ChatConversation({
     if (!hasTTS) {
       return 'Voice output unavailable. App is in text-only mode.';
     }
-    if (!hasUsableTTSVoice) {
-      return 'No TTS voice available. Responses remain in text-only mode.';
-    }
     return null;
-  }, [hasTTS, hasUsableTTSVoice]);
+  }, [hasTTS]);
 
   const canSend = input.trim().length > 0 && !isReplying && wsState === 'open';
 
@@ -714,11 +734,27 @@ export default function ChatConversation({
                                   } else if (isPaused) {
                                     resumeTTS();
                                   } else {
-                                    void speakWithFallback(msg.content, pitch, rate, volume);
+                                    void speakWithFallback(
+                                      msg.content,
+                                      pitch,
+                                      rate,
+                                      volume,
+                                      languageOverride,
+                                      mood,
+                                      styleWeight
+                                    );
                                   }
                                 } else {
                                   setActiveSpeechMessageId(msg.id);
-                                  void speakWithFallback(msg.content, pitch, rate, volume);
+                                  void speakWithFallback(
+                                    msg.content,
+                                    pitch,
+                                    rate,
+                                    volume,
+                                    languageOverride,
+                                    mood,
+                                    styleWeight
+                                  );
                                 }
                               }}
                               size='icon'

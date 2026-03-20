@@ -79,6 +79,49 @@ async function authFetch<T>(url: string, options: RequestInit = {}, retries = 1)
   return response.json();
 }
 
+async function authFetchRaw(
+  url: string,
+  options: RequestInit = {},
+  retries = 1
+): Promise<Response> {
+  const token = await getAuthHeader();
+  if (!token) throw new ApiError('Not authenticated', 401);
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...options.headers,
+  };
+
+  const response = await fetch(url, { ...options, headers });
+
+  if (response.status === 401 && retries > 0) {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.refreshSession();
+    if (error || !session) {
+      throw new ApiError('Session expired', 401);
+    }
+    return authFetchRaw(url, options, retries - 1);
+  }
+
+  if (!response.ok) {
+    const parsedBody = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    const fallbackText = await response.text().catch(() => null);
+    const message =
+      parsedBody && typeof parsedBody === 'object' && 'detail' in parsedBody
+        ? String(parsedBody.detail)
+        : fallbackText || `HTTP error! status: ${response.status}`;
+
+    throw new ApiError(message, response.status);
+  }
+
+  return response;
+}
+
 export const api = {
   createMessage: async (sessionId: number, data: MessageCreate): Promise<MessageRead> => {
     return authFetch<MessageRead>(`${API_BASE}/sessions/${sessionId}/messages`, {
@@ -97,17 +140,21 @@ export const api = {
       method: 'DELETE',
     });
   },
-  generateTTS: async (
-    text: string
-  ): Promise<{ success: boolean; audioUrl: string | null; note: string }> => {
-    return authFetch<{
-      success: boolean;
-      audioUrl: string | null;
-      note: string;
-    }>(`${API_BASE}/voice/tts`, {
-      body: JSON.stringify({ text }),
+  generateTTSAudio: async (input: {
+    text: string;
+    emotion?: string;
+    speed?: number;
+    styleWeight?: number;
+    language?: string;
+  }): Promise<Blob> => {
+    const response = await authFetchRaw(`${API_BASE}/voice/tts`, {
+      body: JSON.stringify(input),
+      headers: {
+        'Content-Type': 'application/json',
+      },
       method: 'POST',
     });
+    return response.blob();
   },
 
   getCurrentSession: async (): Promise<SessionRead> => {

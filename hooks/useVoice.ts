@@ -17,6 +17,14 @@ interface TTSAudioState {
   source: 'html-audio' | 'speech-synthesis' | null;
 }
 
+const resolveFallbackSpeechLang = (languageOverride?: string): string => {
+  const normalized = (languageOverride || '').toLowerCase();
+  if (normalized === 'en') return 'en-US';
+  if (normalized === 'ja') return 'ja-JP';
+  if (normalized === 'zh') return 'zh-CN';
+  return navigator.language || 'en-US';
+};
+
 const ttsAudioStateListeners = new Set<() => void>();
 let ttsAudioState: TTSAudioState = {
   audioElement: null,
@@ -90,7 +98,8 @@ export const useVoice = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const ttsSupported = 'speechSynthesis' in window;
+    const ttsSupported = 'Audio' in window;
+    const speechSynthesisSupported = 'speechSynthesis' in window;
     const sttSupported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
 
     setHasTTS(ttsSupported);
@@ -100,12 +109,14 @@ export const useVoice = () => {
       console.warn('Speech-to-Text is unsupported in this browser.');
     }
 
-    if (ttsSupported) {
+    if (speechSynthesisSupported) {
       const updateVoices = () => {
         setHasUsableTTSVoice(window.speechSynthesis.getVoices().length > 0);
       };
       updateVoices();
       window.speechSynthesis.onvoiceschanged = updateVoices;
+    } else {
+      setHasUsableTTSVoice(false);
     }
 
     return () => {
@@ -313,75 +324,89 @@ export const useVoice = () => {
     [hasTTS, getBestVoice, setIsSpeaking, setMood]
   );
 
+  const detectEmotionFromText = useCallback((input: string): string => {
+    const text = input.toLowerCase();
+    if (/happy|joy|excited|great|awesome|yay/.test(text)) return 'happy';
+    if (/sad|sorry|upset|unhappy|regret/.test(text)) return 'sad';
+    if (/angry|mad|annoyed|furious|frustrated/.test(text)) return 'angry';
+    if (/surpris|wow|unexpected|really\?/.test(text)) return 'surprised';
+    if (/think|hmm|consider|perhaps|maybe/.test(text)) return 'thinking';
+    return 'talking';
+  }, []);
+
   const speakWithFallback = useCallback(
     async (
       text: string,
       pitch = 1.0,
       rate = 1.0,
       volume = 1.0,
-      lang = navigator.language || 'en-US'
+      lang = 'auto',
+      emotion?: string,
+      styleWeight = 1.0
     ) => {
       if (!hasTTS) return;
 
-      if (hasUsableTTSVoice) {
-        speak(text, pitch, rate, volume, lang);
-        return;
-      }
-
       try {
-        const data = await api.generateTTS(text);
-        if (data.audioUrl) {
-          const audio = new Audio(data.audioUrl);
-          activeFallbackAudioRef.current = audio;
-          audio.volume = volume;
-          // Note: HTML5 Audio doesn't natively support easy pitch shifting without Web Audio API.
-          // Fallback limits to rate change.
-          audio.playbackRate = rate;
+        const blob = await api.generateTTSAudio({
+          emotion: emotion || detectEmotionFromText(text),
+          language: lang === 'auto' ? undefined : lang,
+          speed: rate,
+          styleWeight,
+          text,
+        });
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        activeFallbackAudioRef.current = audio;
+        audio.volume = volume;
+        audio.playbackRate = rate;
 
-          audio.onplay = () => {
-            setIsSpeaking(true);
-            setMood('talking');
-            setIsPaused(false);
-            emitTTSAudioState({
-              audioElement: audio,
-              isPlaying: true,
-              source: 'html-audio',
-            });
-          };
-          audio.onended = () => {
-            setIsSpeaking(false);
-            setMood('idle');
-            emitTTSAudioState({
-              audioElement: null,
-              isPlaying: false,
-              source: null,
-            });
-            if (activeFallbackAudioRef.current === audio) {
-              activeFallbackAudioRef.current = null;
-            }
-          };
-          audio.onerror = () => {
-            setIsSpeaking(false);
-            setMood('idle');
-            emitTTSAudioState({
-              audioElement: null,
-              isPlaying: false,
-              source: null,
-            });
-            if (activeFallbackAudioRef.current === audio) {
-              activeFallbackAudioRef.current = null;
-            }
-          };
-          await audio.play();
-          return;
-        }
+        audio.onplay = () => {
+          setIsSpeaking(true);
+          setMood('talking');
+          setIsPaused(false);
+          emitTTSAudioState({
+            audioElement: audio,
+            isPlaying: true,
+            source: 'html-audio',
+          });
+        };
+        audio.onended = () => {
+          setIsSpeaking(false);
+          setMood('idle');
+          emitTTSAudioState({
+            audioElement: null,
+            isPlaying: false,
+            source: null,
+          });
+          URL.revokeObjectURL(audioUrl);
+          if (activeFallbackAudioRef.current === audio) {
+            activeFallbackAudioRef.current = null;
+          }
+        };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          setMood('idle');
+          emitTTSAudioState({
+            audioElement: null,
+            isPlaying: false,
+            source: null,
+          });
+          URL.revokeObjectURL(audioUrl);
+          if (activeFallbackAudioRef.current === audio) {
+            activeFallbackAudioRef.current = null;
+          }
+        };
+        await audio.play();
+        return;
       } catch (err) {
-        console.warn('Backend TTS fallback failed, using client TTS', err);
+        console.warn('Backend TTS failed, falling back to Web Speech API', err);
       }
 
-      speak(text, pitch, rate, volume, lang);
+      if (hasUsableTTSVoice) {
+        speak(text, pitch, rate, volume, resolveFallbackSpeechLang(lang));
+      }
     },
-    [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood]
+    [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood, detectEmotionFromText]
   );
 
   const startListening = useCallback(
