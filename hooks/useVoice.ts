@@ -17,14 +17,6 @@ interface TTSAudioState {
   source: 'html-audio' | 'speech-synthesis' | null;
 }
 
-const resolveFallbackSpeechLang = (languageOverride?: string): string => {
-  const normalized = (languageOverride || '').toLowerCase();
-  if (normalized === 'en') return 'en-US';
-  if (normalized === 'ja') return 'ja-JP';
-  if (normalized === 'zh') return 'zh-CN';
-  return navigator.language || 'en-US';
-};
-
 const ttsAudioStateListeners = new Set<() => void>();
 let ttsAudioState: TTSAudioState = {
   audioElement: null,
@@ -340,7 +332,6 @@ export const useVoice = () => {
       pitch = 1.0,
       rate = 1.0,
       volume = 1.0,
-      lang = 'auto',
       emotion?: string,
       styleWeight = 1.0
     ) => {
@@ -349,7 +340,6 @@ export const useVoice = () => {
       try {
         const blob = await api.generateTTSAudio({
           emotion: emotion || detectEmotionFromText(text),
-          language: lang === 'auto' ? undefined : lang,
           speed: rate,
           styleWeight,
           text,
@@ -403,7 +393,7 @@ export const useVoice = () => {
       }
 
       if (hasUsableTTSVoice) {
-        speak(text, pitch, rate, volume, resolveFallbackSpeechLang(lang));
+        speak(text, pitch, rate, volume, 'en-US');
       }
     },
     [hasTTS, hasUsableTTSVoice, speak, setIsSpeaking, setMood, detectEmotionFromText]

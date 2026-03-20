@@ -27,7 +27,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useVoice } from '@/hooks/useVoice';
-import type { VoiceLanguageOverride } from '@/hooks/useVoiceSettings';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { ApiError, api } from '@/lib/api';
 import type { Mood } from '@/store/avatarStore';
@@ -65,7 +64,6 @@ function isAuthError(error: unknown): boolean {
 interface ChatConversationProps {
   sttEnabled: boolean;
   ttsEnabled: boolean;
-  languageOverride?: VoiceLanguageOverride;
   pitch?: number;
   rate?: number;
   volume?: number;
@@ -75,7 +73,6 @@ interface ChatConversationProps {
 export default function ChatConversation({
   sttEnabled,
   ttsEnabled,
-  languageOverride = 'auto',
   pitch = 1.0,
   rate = 1.0,
   volume = 1.0,
@@ -168,28 +165,9 @@ export default function ChatConversation({
     if (lastMsg && !lastMsg.is_user && !spokenRef.current.has(lastMsg.id) && hasTTS && ttsEnabled) {
       spokenRef.current.add(lastMsg.id);
       setActiveSpeechMessageId(lastMsg.id);
-      void speakWithFallback(
-        lastMsg.content,
-        pitch,
-        rate,
-        volume,
-        languageOverride,
-        mood,
-        styleWeight
-      );
+      void speakWithFallback(lastMsg.content, pitch, rate, volume, mood, styleWeight);
     }
-  }, [
-    messages,
-    speakWithFallback,
-    hasTTS,
-    ttsEnabled,
-    languageOverride,
-    pitch,
-    rate,
-    volume,
-    mood,
-    styleWeight,
-  ]);
+  }, [messages, speakWithFallback, hasTTS, ttsEnabled, pitch, rate, volume, mood, styleWeight]);
 
   useEffect(() => {
     if (!sttEnabled) stopSTT();
@@ -739,7 +717,6 @@ export default function ChatConversation({
                                       pitch,
                                       rate,
                                       volume,
-                                      languageOverride,
                                       mood,
                                       styleWeight
                                     );
@@ -751,7 +728,6 @@ export default function ChatConversation({
                                     pitch,
                                     rate,
                                     volume,
-                                    languageOverride,
                                     mood,
                                     styleWeight
                                   );

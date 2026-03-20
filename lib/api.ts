@@ -145,7 +145,6 @@ export const api = {
     emotion?: string;
     speed?: number;
     styleWeight?: number;
-    language?: string;
   }): Promise<Blob> => {
     const response = await authFetchRaw(`${API_BASE}/voice/tts`, {
       body: JSON.stringify(input),

@@ -6,13 +6,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import ChatConversation from '@/components/ChatConversation';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
@@ -52,8 +45,6 @@ export default function ChatPageShell() {
     setSttEnabled,
     ttsEnabled,
     setTtsEnabled,
-    languageOverride,
-    setLanguageOverride,
     pitch,
     setPitch,
     rate,
@@ -227,33 +218,6 @@ export default function ChatPageShell() {
                         <div className='mt-3 space-y-4 rounded-xl border border-slate-800/60 bg-slate-900/10 p-4'>
                           <div className='space-y-2.5'>
                             <div className='flex items-center justify-between'>
-                              <span className='text-xs font-medium text-slate-300'>
-                                Voice Language
-                              </span>
-                              <span className='text-[10px] text-slate-500 uppercase'>
-                                {languageOverride}
-                              </span>
-                            </div>
-                            <Select
-                              onValueChange={(value) =>
-                                setLanguageOverride(value as 'auto' | 'en' | 'ja' | 'zh')
-                              }
-                              value={languageOverride}
-                            >
-                              <SelectTrigger className='h-8 border-slate-800 bg-slate-900/30 text-xs text-slate-200'>
-                                <SelectValue placeholder='Select language mode' />
-                              </SelectTrigger>
-                              <SelectContent className='border-slate-800 bg-slate-950 text-slate-100'>
-                                <SelectItem value='auto'>Auto (English-first)</SelectItem>
-                                <SelectItem value='en'>English</SelectItem>
-                                <SelectItem value='ja'>Japanese</SelectItem>
-                                <SelectItem value='zh'>Chinese</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className='space-y-2.5'>
-                            <div className='flex items-center justify-between'>
                               <span className='text-xs font-medium text-slate-300'>Volume</span>
                               <span className='text-[10px] text-slate-500'>
                                 {Math.round(volume * 100)}%
@@ -344,7 +308,6 @@ export default function ChatPageShell() {
 
       <div className='mx-auto h-[calc(100vh-3.5rem)] w-full max-w-7xl overflow-hidden px-4 py-4 md:px-6'>
         <ChatConversation
-          languageOverride={languageOverride}
           pitch={pitch}
           rate={rate}
           sttEnabled={sttEnabled}

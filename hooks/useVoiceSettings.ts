@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
 
-export type VoiceLanguageOverride = 'auto' | 'en' | 'ja' | 'zh';
-
 export const useVoiceSettings = () => {
   const getSettings = () => {
     if (typeof window === 'undefined')
       return {
-        languageOverride: 'auto' as VoiceLanguageOverride,
         pitch: 1.0,
         rate: 1.0,
         stt: true,
@@ -19,12 +16,6 @@ export const useVoiceSettings = () => {
       if (stored) {
         const parsed = JSON.parse(stored);
         return {
-          languageOverride:
-            parsed.languageOverride === 'en' ||
-            parsed.languageOverride === 'ja' ||
-            parsed.languageOverride === 'zh'
-              ? parsed.languageOverride
-              : 'auto',
           pitch: typeof parsed.pitch === 'number' ? parsed.pitch : 1.0,
           rate: typeof parsed.rate === 'number' ? parsed.rate : 1.0,
           stt: typeof parsed.stt === 'boolean' ? parsed.stt : true,
@@ -37,7 +28,6 @@ export const useVoiceSettings = () => {
       // Fallback on JSON parse error
     }
     return {
-      languageOverride: 'auto' as VoiceLanguageOverride,
       pitch: 1.0,
       rate: 1.0,
       stt: true,
@@ -49,9 +39,6 @@ export const useVoiceSettings = () => {
 
   const [sttEnabled, setSttEnabled] = useState<boolean>(() => getSettings().stt);
   const [ttsEnabled, setTtsEnabled] = useState<boolean>(() => getSettings().tts);
-  const [languageOverride, setLanguageOverride] = useState<VoiceLanguageOverride>(
-    () => getSettings().languageOverride
-  );
   const [pitch, setPitch] = useState<number>(() => getSettings().pitch);
   const [rate, setRate] = useState<number>(() => getSettings().rate);
   const [volume, setVolume] = useState<number>(() => getSettings().volume);
@@ -61,7 +48,6 @@ export const useVoiceSettings = () => {
     localStorage.setItem(
       'voiceEnabled',
       JSON.stringify({
-        languageOverride,
         pitch,
         rate,
         stt: sttEnabled,
@@ -70,13 +56,11 @@ export const useVoiceSettings = () => {
         volume,
       })
     );
-  }, [sttEnabled, ttsEnabled, languageOverride, pitch, rate, volume, styleWeight]);
+  }, [sttEnabled, ttsEnabled, pitch, rate, volume, styleWeight]);
 
   return {
-    languageOverride,
     pitch,
     rate,
-    setLanguageOverride,
     setPitch,
     setRate,
     setSttEnabled,
